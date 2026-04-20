@@ -1,0 +1,70 @@
+\documentclass[12pt, a4paper]{scrartcl}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[hidelinks]{hyperref}
+\usepackage[ngerman]{babel}
+\usepackage{graphicx,xcolor,enumitem,booktabs,tabularx}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{parskip}
+
+% ── Farben ──────────────────────────────────────────────
+\definecolor{thblue}{RGB}{0,90,160}
+
+% ── Metadaten ───────────────────────────────────────────
+\newcommand{\faculty}{Fakultät Angewandte Informatik}
+\newcommand{\studies}{Bachelor Cyber-Security}
+\newcommand{\coursetitle}{Security Engineering}
+\newcommand{\semester}{SS\,2026}
+\newcommand{\projecttitle}{Bedrohungsanalyse und Absicherung eines Online-Multiplayer-Systems am Beispiel einer verteilten Spielanwendung}
+\newcommand{\supervisor}{Prof.\ Dr.\ Martin Schramm}
+\newcommand{\studentA}{Christof Renner (22301943)}
+\newcommand{\studentB}{Manuel Friedl (12306626)}
+\newcommand{\submissiondate}{20.\ April 2026}
+
+\begin{document}
+
+% ── Titelseite ──────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{1cm}
+  {\LARGE Technische Hochschule Deggendorf\\[0.2cm]
+   \large \faculty\par}
+  \vspace{0.4cm}
+  {\Large Studiengang \studies\\[0.3cm]
+   Kurs: \coursetitle{} -- \semester\par}
+  \vspace{2.5cm}
+  {\huge\bfseries\color{thblue} Themenanmeldung\par}
+  \vspace{1.5cm}
+  {\LARGE\bfseries \projecttitle\par}
+  \vfill
+  \begin{minipage}[t]{0.48\textwidth}
+    \textbf{Vorgelegt von:}\\[6pt]
+    \studentA\\
+    \studentB
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.48\textwidth}\raggedleft
+    \textbf{Betreuer:}\\[6pt]
+    \supervisor
+  \end{minipage}
+  \vspace{1.5cm}
+
+  Datum: \submissiondate
+\end{titlepage}
+
+% ── Pitchseite ──────────────────────────────────────────
+\section*{Pitch}
+
+\section*{Ausgangslage und Motivation}
+Online-Multiplayer-Systeme bestehen aus mehreren verteilten Komponenten wie Clients, Game-Servern, Authentifizierungsdiensten, Matchmaking-Instanzen und Datenbanken. Gerade diese Struktur erzeugt zahlreiche sicherheitskritische Schnittstellen zwischen vertrauenswürdigen und nicht vertrauenswürdigen Bereichen. Im Sinne des Security Engineering soll daher nicht die Spielanwendung selbst im Vordergrund stehen, sondern die sicherheitstechnische Analyse des zugrunde liegenden Gesamtsystems.
+
+\section*{Zielsetzung}
+Ziel der Arbeit ist es, ein verteiltes Online-Multiplayer-System systematisch unter Sicherheitsgesichtspunkten zu untersuchen. Im Mittelpunkt stehen dabei die Identifikation schützenswerter Assets, relevanter Trust Boundaries sowie möglicher Gegner, ihrer Fähigkeiten und ihrer Motivation. Darauf aufbauend sollen wesentliche Bedrohungen für zentrale Komponenten und Kommunikationsbeziehungen herausgearbeitet und hinsichtlich ihrer Relevanz für das Gesamtsystem eingeordnet werden.
+
+\section*{Methodisches Vorgehen}
+Zunächst wird eine beispielhafte Systemarchitektur einer verteilten Spielanwendung modelliert, um sicherheitsrelevante Übergänge und Angriffsflächen sichtbar zu machen. Anschließend erfolgt eine strukturierte Bedrohungsanalyse, beispielsweise auf Basis von STRIDE. Für die identifizierten Bedrohungen werden geeignete technische Sicherheitsmechanismen wie sichere Authentisierung, Kommunikationsabsicherung, Rechteverwaltung, Monitoring, Eingabevalidierung oder Rate Limiting abgeleitet und begründet. Abschließend wird bewertet, inwieweit diese Maßnahmen die Sicherheitslage des Systems tatsächlich verbessern.
+
+\section*{Erwarteter Mehrwert}
+Die Arbeit soll zeigen, wie sich ein verteiltes Online-System im Sinne des Security Engineering nicht nur funktional, sondern auch methodisch abgesichert betrachten lässt. Das angestrebte Ergebnis ist ein nachvollziehbares und praxisnahes Sicherheitskonzept, das typische Bedrohungen eines Multiplayer-Szenarios systematisch erfasst, geeignete Gegenmaßnahmen begründet und verbleibende Restrisiken transparent macht.
+
+\end{document}
