@@ -16,7 +16,7 @@
 \newcommand{\studies}{Bachelor Cyber-Security}
 \newcommand{\coursetitle}{Security Engineering}
 \newcommand{\semester}{SS\,2026}
-\newcommand{\projecttitle}{Bedrohungsanalyse und Absicherung eines Online-Multiplayer-Systems am Beispiel einer verteilten Spielanwendung}
+\newcommand{\projecttitle}{Secure DevOps (DevSecOps) -- Sicherheitstechnische Betrachtung automatisierter CI/CD-Pipelines}
 \newcommand{\supervisor}{Prof.\ Dr.\ Martin Schramm}
 \newcommand{\studentA}{Christof Renner (22301943)}
 \newcommand{\studentB}{Manuel Friedl (12306626)}
@@ -56,15 +56,44 @@
 \section*{Pitch}
 
 \section*{Ausgangslage und Motivation}
-Online-Multiplayer-Systeme bestehen aus mehreren verteilten Komponenten wie Clients, Game-Servern, Authentifizierungsdiensten, Matchmaking-Instanzen und Datenbanken. Gerade diese Struktur erzeugt zahlreiche sicherheitskritische Schnittstellen zwischen vertrauenswürdigen und nicht vertrauenswürdigen Bereichen. Im Sinne des Security Engineering soll daher nicht die Spielanwendung selbst im Vordergrund stehen, sondern die sicherheitstechnische Analyse des zugrunde liegenden Gesamtsystems.
+Moderne Softwareentwicklung basiert auf hochgradig automatisierten Build-, Test- und
+Deployment-Prozessen. Diese CI/CD-Pipelines sind tief in cloud-native Infrastrukturen
+integriert und verfügen über weitreichende Zugriffsrechte auf sensible Ressourcen wie
+Secrets, Container-Registries und Produktionsumgebungen. Angriffe auf
+Softwarelieferketten -- etwa SolarWinds (2020) oder der 3CX-Vorfall (2023) -- belegen,
+dass der Entwicklungsprozess selbst zu einem primären Angriffsziel geworden ist. Im
+Sinne des Security Engineering soll daher nicht ein einzelnes Tool, sondern die
+sicherheitstechnische Analyse des gesamten Pipeline-Systems im Vordergrund stehen.
 
 \section*{Zielsetzung}
-Ziel der Arbeit ist es, ein verteiltes Online-Multiplayer-System systematisch unter Sicherheitsgesichtspunkten zu untersuchen. Im Mittelpunkt stehen dabei die Identifikation schützenswerter Assets, relevanter Trust Boundaries sowie möglicher Gegner, ihrer Fähigkeiten und ihrer Motivation. Darauf aufbauend sollen wesentliche Bedrohungen für zentrale Komponenten und Kommunikationsbeziehungen herausgearbeitet und hinsichtlich ihrer Relevanz für das Gesamtsystem eingeordnet werden.
+Ziel der Arbeit ist es, eine repräsentative CI/CD-Pipeline systematisch unter
+Sicherheitsgesichtspunkten zu untersuchen. Im Mittelpunkt stehen dabei die
+Identifikation schützenswerter Assets (Quellcode, Build-Artefakte, Secrets,
+Deployment-Credentials), relevanter Trust Boundaries sowie möglicher Angreifer, ihrer
+Fähigkeiten und Motivation. Darauf aufbauend sollen wesentliche Bedrohungen für
+zentrale Pipeline-Stufen herausgearbeitet und hinsichtlich ihrer Relevanz für das
+Gesamtsystem eingeordnet werden.
 
 \section*{Methodisches Vorgehen}
-Zunächst wird eine beispielhafte Systemarchitektur einer verteilten Spielanwendung modelliert, um sicherheitsrelevante Übergänge und Angriffsflächen sichtbar zu machen. Anschließend erfolgt eine strukturierte Bedrohungsanalyse, beispielsweise auf Basis von STRIDE. Für die identifizierten Bedrohungen werden geeignete technische Sicherheitsmechanismen wie sichere Authentisierung, Kommunikationsabsicherung, Rechteverwaltung, Monitoring, Eingabevalidierung oder Rate Limiting abgeleitet und begründet. Abschließend wird bewertet, inwieweit diese Maßnahmen die Sicherheitslage des Systems tatsächlich verbessern.
+Zunächst wird eine exemplarische CI/CD-Pipeline modelliert (z.\,B.\ auf Basis von
+GitHub Actions oder GitLab CI), um sicherheitsrelevante Übergänge und
+Angriffsflächen sichtbar zu machen. Anschließend erfolgt eine strukturierte
+Bedrohungsanalyse auf Basis von STRIDE, angewendet auf die einzelnen
+Pipeline-Stufen (Source $\rightarrow$ Build $\rightarrow$ Test $\rightarrow$ Deploy).
+Für die identifizierten Bedrohungen werden geeignete technische
+Sicherheitsmechanismen abgeleitet und begründet -- darunter Secret Management,
+Software Bill of Materials (SBOM), Code-Signing, Branch-Protection-Policies sowie
+Runner-Isolation. Abschließend wird bewertet, inwieweit diese Maßnahmen die
+Sicherheitslage des Systems tatsächlich verbessern, und verbleibende Restrisiken
+werden transparent gemacht.
 
 \section*{Erwarteter Mehrwert}
-Die Arbeit soll zeigen, wie sich ein verteiltes Online-System im Sinne des Security Engineering nicht nur funktional, sondern auch methodisch abgesichert betrachten lässt. Das angestrebte Ergebnis ist ein nachvollziehbares und praxisnahes Sicherheitskonzept, das typische Bedrohungen eines Multiplayer-Szenarios systematisch erfasst, geeignete Gegenmaßnahmen begründet und verbleibende Restrisiken transparent macht.
+Die Arbeit soll zeigen, wie sich ein moderner DevOps-Prozess im Sinne des Security
+Engineering nicht nur funktional, sondern auch methodisch absichern lässt. Das
+angestrebte Ergebnis ist ein nachvollziehbares und praxisnahes Sicherheitskonzept,
+das typische Bedrohungen einer CI/CD-Pipeline systematisch erfasst, geeignete
+Gegenmaßnahmen begründet und den Zielkonflikt zwischen Deployment-Geschwindigkeit
+und Security-Assurance -- inklusive der zugrundeliegenden Anreizstrukturen -- transparent
+macht.
 
 \end{document}
