@@ -7,3 +7,14 @@
 **.fls
 **.fdb_latexmk
 .DS_Store
+
+# Python / build artifacts
+__pycache__/
+*.pyc
+.venv/
+.coverage
+coverage.xml
+*.sarif
+sbom*.json
+build/
+dist/

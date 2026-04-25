@@ -1,0 +1,5 @@
+# Pinned to exact versions so the lockfile is reproducible.
+# Update via Dependabot PRs (see .github/dependabot.yml) so each upgrade
+# passes the full hardened pipeline.
+Flask==3.0.3
+gunicorn==23.0.0

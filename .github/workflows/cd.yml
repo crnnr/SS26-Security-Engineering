@@ -1,0 +1,113 @@
+# Deploy flow: triggered by signed git tags. Verifies cosign signature
+# and provenance before promoting through staging -> production via
+# GitHub Environments (manual approval gate on production).
+name: CD
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      image_digest:
+        description: "Image digest to deploy (sha256:...)"
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  verify:
+    name: Verify signature & provenance
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    outputs:
+      digest: ${{ steps.resolve.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+
+      - name: Resolve image reference
+        id: resolve
+        env:
+          INPUT_DIGEST: ${{ inputs.image_digest }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -n "$INPUT_DIGEST" ]; then
+            echo "digest=$INPUT_DIGEST" >> "$GITHUB_OUTPUT"
+            echo "ref=${REGISTRY}/${IMAGE_NAME}@${INPUT_DIGEST}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${REGISTRY}/${IMAGE_NAME}:${REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify cosign signature (keyless)
+        env:
+          IMAGE: ${{ steps.resolve.outputs.ref }}
+        run: |
+          cosign verify \
+            --certificate-identity-regexp "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.+" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$IMAGE"
+
+      - name: Verify build provenance attestation
+        env:
+          IMAGE: ${{ steps.resolve.outputs.ref }}
+        run: |
+          cosign verify-attestation \
+            --type slsaprovenance \
+            --certificate-identity-regexp "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.+" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$IMAGE"
+
+  deploy-staging:
+    name: Deploy to staging
+    needs: verify
+    runs-on: ubuntu-24.04
+    environment:
+      name: staging
+      url: https://staging.example.invalid
+    permissions:
+      contents: read
+      id-token: write   # for cloud OIDC federation (e.g. Azure/AWS)
+    steps:
+      - name: Federated login (placeholder)
+        run: echo "Use azure/login@... or aws-actions/configure-aws-credentials@... with OIDC here."
+
+      - name: Deploy
+        env:
+          IMAGE_DIGEST: ${{ needs.verify.outputs.digest }}
+        run: |
+          echo "kubectl set image deploy/app app=${REGISTRY}/${IMAGE_NAME}@${IMAGE_DIGEST}"
+
+  deploy-production:
+    name: Deploy to production (manual approval)
+    needs: [verify, deploy-staging]
+    runs-on: ubuntu-24.04
+    environment:
+      name: production
+      url: https://app.example.invalid
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Federated login (placeholder)
+        run: echo "OIDC federation to cloud provider goes here -- no long-lived secrets."
+
+      - name: Deploy
+        env:
+          IMAGE_DIGEST: ${{ needs.verify.outputs.digest }}
+        run: |
+          echo "kubectl set image deploy/app app=${REGISTRY}/${IMAGE_NAME}@${IMAGE_DIGEST}"

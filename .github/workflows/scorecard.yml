@@ -1,0 +1,37 @@
+# OpenSSF Scorecard -- continuously evaluates repo posture (branch
+# protection, signed releases, dangerous workflows, etc.).
+name: Scorecard
+
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: "23 4 * * 1"
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-24.04
+    permissions:
+      security-events: write
+      id-token: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630e6614a59b96b3f3a0e8a83 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: ossf/scorecard-action@05b42c624433fc40578a4040d5cf5e36ddca8cde # v2.4.2
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - uses: github/codeql-action/upload-sarif@4e94bd11f71e507f7f87df81788dff88d1dacbfb # v3.28.10
+        with:
+          sarif_file: results.sarif
+          category: scorecard

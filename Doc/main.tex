@@ -1,0 +1,620 @@
+\documentclass[12pt, a4paper]{scrartcl}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[hidelinks]{hyperref}
+\usepackage[ngerman]{babel}
+\usepackage{graphicx,xcolor,enumitem,booktabs,tabularx,longtable}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{parskip}
+\usepackage{csquotes}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc}
+
+% ── Farben ──────────────────────────────────────────────
+\definecolor{thblue}{RGB}{0,90,160}
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{codekw}{RGB}{0,90,160}
+\definecolor{codecm}{RGB}{100,120,100}
+\definecolor{codest}{RGB}{160,40,40}
+
+\lstdefinestyle{code}{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecm}\itshape,
+  stringstyle=\color{codest},
+  breaklines=true,
+  showstringspaces=false,
+  frame=single,
+  framesep=4pt,
+  rulecolor=\color{black!20},
+  numbers=left,
+  numberstyle=\tiny\color{black!50},
+  numbersep=8pt,
+  tabsize=2,
+  captionpos=b,
+}
+\lstset{style=code}
+
+\captionsetup{labelfont=bf,font=small,skip=4pt}
+
+% ── Metadaten ───────────────────────────────────────────
+\newcommand{\faculty}{Fakultät Angewandte Informatik}
+\newcommand{\studies}{Bachelor Cyber-Security}
+\newcommand{\coursetitle}{Security Engineering}
+\newcommand{\semester}{SS\,2026}
+\newcommand{\projecttitle}{Secure DevOps (DevSecOps) -- Sicherheitstechnische Betrachtung automatisierter CI/CD-Pipelines}
+\newcommand{\supervisor}{Prof.\ Dr.\ Martin Schramm}
+\newcommand{\studentA}{Christof Renner (22301943)}
+\newcommand{\studentB}{Manuel Friedl (12306626)}
+\newcommand{\submissiondate}{\today}
+
+\begin{document}
+
+% ── Titelseite ──────────────────────────────────────────
+\begin{titlepage}
+  \centering
+  \vspace*{1cm}
+  {\LARGE Technische Hochschule Deggendorf\\[0.2cm]
+   \large \faculty\par}
+  \vspace{0.4cm}
+  {\Large Studiengang \studies\\[0.3cm]
+   Kurs: \coursetitle{} -- \semester\par}
+  \vspace{2.5cm}
+  {\huge\bfseries\color{thblue} Projektdokumentation\par}
+  \vspace{1.5cm}
+  {\LARGE\bfseries \projecttitle\par}
+  \vfill
+  \begin{minipage}[t]{0.48\textwidth}
+    \textbf{Vorgelegt von:}\\[6pt]
+    \studentA\\
+    \studentB
+  \end{minipage}\hfill
+  \begin{minipage}[t]{0.48\textwidth}\raggedleft
+    \textbf{Betreuer:}\\[6pt]
+    \supervisor
+  \end{minipage}
+  \vspace{1.5cm}
+
+  Datum: \submissiondate
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ────────────────────────────────────────────────────────
+\section{Einleitung}
+
+\subsection{Motivation und Problemstellung}
+Moderne Softwareentwicklung basiert auf hochgradig automatisierten Build-, Test- und
+Deployment-Prozessen. CI/CD-Pipelines sind tief in cloud-native Infrastrukturen
+integriert und verfügen über weitreichende Zugriffsrechte auf sensible Ressourcen
+wie Quellcode-Repositories, Secrets, Container-Registries und Produktionsumgebungen.
+Angriffe auf Softwarelieferketten -- etwa SolarWinds (2020), Codecov (2021),
+\mbox{Log4Shell} (2021) und der 3CX-Vorfall (2023) -- belegen, dass der
+Entwicklungsprozess selbst zu einem primären Angriffsziel geworden ist.
+
+Aus Sicht des Security Engineering ist eine Pipeline weniger ein Tooling-Problem
+als ein \emph{Systemproblem}: Sie verbindet menschliche Identitäten,
+externe Abhängigkeiten, Build-Hosts, Registries und Deployment-Targets über
+mehrere Vertrauensgrenzen hinweg. Eine isolierte Betrachtung einzelner Werkzeuge
+greift daher zu kurz.
+
+\subsection{Zielsetzung}
+Ziel der Arbeit ist eine systematische sicherheitstechnische Betrachtung einer
+repräsentativen CI/CD-Pipeline. Konkret werden:
+\begin{itemize}[leftmargin=1.4em]
+  \item schützenswerte Assets und Trust Boundaries identifiziert,
+  \item Bedrohungen je Pipeline-Stufe nach STRIDE strukturiert analysiert,
+  \item geeignete Sicherheitsmechanismen abgeleitet und in einer
+        prototypischen Pipeline (GitHub Actions) umgesetzt,
+  \item die Wirksamkeit dieser Maßnahmen anhand von SLSA-Levels und
+        OpenSSF-Scorecard evaluiert,
+  \item verbleibende Restrisiken transparent gemacht.
+\end{itemize}
+
+\subsection{Abgrenzung}
+Nicht Gegenstand der Arbeit sind: vollständige Härtung des Cloud-Tenants,
+Penetrationstests der Pipeline-Plattform selbst sowie organisatorische
+Maßnahmen jenseits der Branch-Protection-Konfiguration. Die Pipeline wird auf
+GitHub Actions umgesetzt; die Übertragbarkeit auf GitLab~CI wird qualitativ
+diskutiert.
+
+\subsection{Aufbau der Arbeit}
+Kapitel~\ref{sec:grundlagen} klärt die Begriffe DevSecOps, Supply-Chain-Security
+und die zugrundeliegenden Frameworks (STRIDE, SLSA, SSDF). Kapitel~\ref{sec:system}
+beschreibt das modellierte System und seine Trust Boundaries.
+Kapitel~\ref{sec:threatmodel} enthält das STRIDE-Threat-Model.
+Kapitel~\ref{sec:countermeasures} ordnet jeder Bedrohung konkrete
+Gegenmaßnahmen zu und dokumentiert die Implementierung im Prototyp.
+Kapitel~\ref{sec:evaluation} bewertet die Wirksamkeit, Kapitel~\ref{sec:fazit}
+fasst zusammen und diskutiert Restrisiken.
+
+% ────────────────────────────────────────────────────────
+\section{Grundlagen}\label{sec:grundlagen}
+
+\subsection{DevSecOps}
+DevSecOps bezeichnet die Integration sicherheitstechnischer Aktivitäten in
+den DevOps-Lebenszyklus mit dem Ziel, Sicherheit als kontinuierlichen,
+automatisierten Bestandteil von Build und Deployment zu etablieren
+(\enquote{shift~left} und \enquote{shift~right}). Sicherheitsmaßnahmen
+werden nicht nachgelagert aufgesetzt, sondern als Teil derselben Pipeline
+ausgeführt, die auch das Artefakt produziert.
+
+\subsection{Software Supply Chain Security}
+Eine Software Supply Chain umfasst alle Personen, Prozesse, Werkzeuge und
+Abhängigkeiten, die zur Erstellung und Auslieferung eines Artefakts beitragen.
+Angriffsklassen nach \cite{slsa} sind insbesondere:
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Source}-Angriffe (z.\,B.\ kompromittierte Maintainer-Accounts,
+        Typosquatting),
+  \item \textbf{Build}-Angriffe (z.\,B.\ kompromittierte Runner, manipulierte
+        Compiler/Plugins),
+  \item \textbf{Dependency}-Angriffe (z.\,B.\ Übernahme verwaister Pakete),
+  \item \textbf{Distribution}-Angriffe (z.\,B.\ Image-Tag-Replacement in
+        Registries).
+\end{itemize}
+
+\subsection{Frameworks}
+\begin{description}[leftmargin=1.4em,style=nextline]
+  \item[STRIDE] Microsoft-Methodik zur Bedrohungsmodellierung mit den
+        Kategorien \emph{Spoofing, Tampering, Repudiation, Information
+        Disclosure, Denial of Service, Elevation of Privilege}.
+  \item[SLSA v1.0] \emph{Supply-chain Levels for Software Artifacts}
+        definiert Anforderungen an Build-Integrität in vier Stufen
+        (Build~L1--L3, Source~L1--L3).
+  \item[NIST SSDF (SP\,800-218)] \emph{Secure Software Development Framework}
+        -- Praktiken über den gesamten SDLC.
+  \item[OpenSSF Scorecard] Automatisierte Bewertung von Repository-Posture
+        anhand objektiver Checks.
+\end{description}
+
+\subsection{Security Engineering Framework}\label{sec:seframework}
+Die Arbeit folgt dem in der Lehrveranstaltung eingeführten
+Vier-Quadranten-Modell des Security Engineering nach Anderson:
+\emph{Policy}, \emph{Mechanism}, \emph{Assurance} und \emph{Incentives}.
+Tabelle~\ref{tab:seframework} ordnet jedem Quadranten konkrete
+Bestandteile der untersuchten Pipeline zu; auf den Quadranten
+\emph{Incentives} wird in Abschnitt~\ref{sec:humanfactor} vertiefend
+eingegangen.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{p{2.4cm} p{11.5cm}}
+\toprule
+\textbf{Quadrant} & \textbf{Umsetzung in der Pipeline} \\
+\midrule
+Policy &
+Branch-Protection-Regeln, CODEOWNERS, Required Status Checks,
+Coverage-Schwelle 80\,\%, HIGH/CRITICAL als Build-Breaker,
+Manual-Approval-Gate für Production. \\
+Mechanism &
+Bandit, CodeQL, pip-audit, Trivy, Syft (SBOM), Cosign Keyless Signing,
+SLSA-Provenance, OIDC-Federation, Action-Pinning auf Commit-SHA. \\
+Assurance &
+SLSA-Level-Bewertung, OpenSSF Scorecard (wöchentlich),
+SARIF-Upload in Code-Scanning, Cosign-Verify im CD-Workflow,
+Sigstore Rekor Transparency Log. \\
+Incentives &
+Vier-Augen-Prinzip via CODEOWNERS, automatisierte Dependabot-PRs
+reduzieren Reibung für sichere Updates, parallele Jobs +
+\texttt{cancel-in-progress} mildern den Geschwindigkeits-Konflikt
+(siehe Abschnitt~\ref{sec:humanfactor}). \\
+\bottomrule
+\end{tabular}
+\caption{Mapping der Pipeline-Bestandteile auf das
+Security-Engineering-Framework.}
+\label{tab:seframework}
+\end{table}
+
+% ────────────────────────────────────────────────────────
+\section{System unter Betrachtung}\label{sec:system}
+
+\subsection{Architekturüberblick}
+Untersucht wird eine prototypische, container-basierte Pipeline für eine
+Python-Webanwendung. Die wesentlichen Stufen sind in
+Abbildung~\ref{fig:pipeline} dargestellt.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+  node distance=0.5cm and 0.7cm,
+  stage/.style={rectangle, rounded corners, draw=thblue, thick, fill=thblue!8,
+                minimum width=2.4cm, minimum height=1.0cm, align=center,
+                font=\small},
+  arrow/.style={-Stealth, thick, thblue},
+  ext/.style={rectangle, draw=black!50, dashed, fill=black!5,
+              minimum width=2.4cm, minimum height=0.9cm, align=center,
+              font=\footnotesize\itshape}
+]
+  \node[stage] (src)    {Source\\(GitHub)};
+  \node[stage, right=of src]   (build)  {Build\\(Runner)};
+  \node[stage, right=of build] (test)   {Test \&\\Scan};
+  \node[stage, right=of test]  (pkg)    {Package\\\& Sign};
+  \node[stage, right=of pkg]   (deploy) {Deploy\\(Cloud)};
+
+  \draw[arrow] (src)   -- (build);
+  \draw[arrow] (build) -- (test);
+  \draw[arrow] (test)  -- (pkg);
+  \draw[arrow] (pkg)   -- (deploy);
+
+  \node[ext, below=1.0cm of build] (deps) {PyPI / Base\\Images};
+  \node[ext, below=1.0cm of pkg]   (reg)  {GHCR \&\\Sigstore};
+
+  \draw[arrow, dashed] (deps) -- (build);
+  \draw[arrow, dashed] (pkg)  -- (reg);
+\end{tikzpicture}
+\caption{Pipeline-Stufen und externe Vertrauensanker.}
+\label{fig:pipeline}
+\end{figure}
+
+\subsection{Schützenswerte Assets}
+\begin{longtable}{p{4.2cm} p{9.5cm}}
+\toprule
+\textbf{Asset} & \textbf{Schutzziel (CIA + AAA)} \\
+\midrule \endhead
+Quellcode (main) & Integrität, Authentizität \\
+Build-Artefakt (Image) & Integrität, Authentizität, Verfügbarkeit \\
+Secrets (Cloud-Cred., Tokens) & Vertraulichkeit, Integrität \\
+SBOM \& Provenance & Integrität, Nicht-Abstreitbarkeit \\
+Pipeline-Konfiguration & Integrität, Autorisierung \\
+Build-Runner-Identität (OIDC) & Authentizität, Vertraulichkeit \\
+\bottomrule
+\end{longtable}
+
+\subsection{Trust Boundaries}
+\begin{enumerate}[leftmargin=1.4em]
+  \item Entwickler-Workstation $\leftrightarrow$ GitHub
+  \item GitHub-Plattform $\leftrightarrow$ Build-Runner
+  \item Build-Runner $\leftrightarrow$ Paket-/Image-Registries (PyPI, Docker Hub, GHCR)
+  \item Build-Runner $\leftrightarrow$ Sigstore (Fulcio/Rekor)
+  \item Pipeline $\leftrightarrow$ Deployment-Target (Cloud-API)
+\end{enumerate}
+
+\subsection{Angreifermodell}
+Drei relevante Profile werden betrachtet:
+\begin{description}[leftmargin=1.4em,style=nextline]
+  \item[A1 -- Externer Angreifer] kein Repo-Zugriff; nutzt Phishing,
+        Typosquatting, Schwachstellen in Abhängigkeiten.
+  \item[A2 -- Kompromittierter Mitwirkender] gültige, aber begrenzte
+        Schreibrechte (z.\,B.\ Fork-PR, einzelner Maintainer).
+  \item[A3 -- Insider/Plattform] Admin-Rechte am Repo bzw.\ kompromittierter
+        Self-hosted-Runner.
+\end{description}
+
+% ────────────────────────────────────────────────────────
+\section{Bedrohungsanalyse (STRIDE)}\label{sec:threatmodel}
+
+Die folgende Tabelle dokumentiert pro Pipeline-Stufe die wesentlichen
+Bedrohungen, klassifiziert nach STRIDE. Die Risiko-Einstufung folgt einer
+qualitativen Skala (niedrig/mittel/hoch) auf Basis von Eintrittswahrscheinlichkeit
+und Schadensausmaß im Kontext einer Studienarbeit-typischen Demo-Pipeline.
+
+\begin{longtable}{p{1.6cm} p{2.0cm} p{7.4cm} p{1.4cm} p{1.4cm}}
+\toprule
+\textbf{Stufe} & \textbf{STRIDE} & \textbf{Bedrohung} & \textbf{Angr.} & \textbf{Risiko} \\
+\midrule \endhead
+Source & S & Push mit gestohlenen Maintainer-Credentials & A1/A2 & hoch \\
+Source & T & Manipulation von Pipeline-Definitionen via PR & A2 & hoch \\
+Source & R & Unsignierte Commits, fehlende Audit-Trails & A2 & mittel \\
+Source & I & Secrets im Klartext im Repo (Logs, Configs) & A1 & hoch \\
+Build  & T & Bösartige transitive Dependency (Confused-Deps, Typosquat) & A1 & hoch \\
+Build  & T & Manipulation des Base-Images (Tag-Replacement) & A1 & hoch \\
+Build  & E & Workflow mit zu weiten \texttt{permissions} (RW everywhere) & A2 & hoch \\
+Build  & E & \texttt{pull\_request\_target} mit \texttt{secrets} ausgesetzt & A1 & hoch \\
+Build  & I & Cache-Poisoning zwischen PRs & A2 & mittel \\
+Test   & D & Lange laufende Scans blockieren Deployments & A1 & niedrig \\
+Test   & T & Test-Bypass via geänderte Workflow-Bedingungen & A2 & mittel \\
+Pkg    & T & Ungesignedes Image, Tag-Hijack in Registry & A1 & hoch \\
+Pkg    & R & Fehlende Provenance / SBOM & -- & mittel \\
+Deploy & S & Long-lived Cloud-Credentials in Repo-Secrets & A2 & hoch \\
+Deploy & E & Fehlende Approval-Gates für Production & A2 & hoch \\
+Deploy & I & Verbose Logs leaken Tokens / PII & A1 & mittel \\
+\bottomrule
+\caption{STRIDE-Mapping der untersuchten Pipeline.}
+\label{tab:stride}
+\end{longtable}
+
+% ────────────────────────────────────────────────────────
+\section{Gegenmaßnahmen und Implementierung}\label{sec:countermeasures}
+
+\subsection{Source-Stufe}
+\begin{description}[leftmargin=1.4em,style=nextline]
+  \item[Branch Protection \& CODEOWNERS] \texttt{main} ist geschützt; Merges
+        erfordern ein Review durch Code-Owner (Vier-Augen-Prinzip), bestandene
+        Pflicht-Checks, signierte Commits und lineare History.
+  \item[Signierte Commits] Entwickler signieren mit SSH/GPG; nicht-signierte
+        Commits werden serverseitig abgelehnt.
+  \item[Secret-Scanning] \texttt{gitleaks} läuft als Pre-Commit-Hook und in der
+        CI; GitHub Push-Protection ergänzt das.
+  \item[Pinned Actions] Alle GitHub-Actions sind auf Commit-SHA gepinnt, um
+        Tag-Retag-Angriffe (z.\,B.\ \texttt{tj-actions/changed-files} 03/2025)
+        zu verhindern.
+\end{description}
+
+\subsection{Build-Stufe}
+\begin{description}[leftmargin=1.4em,style=nextline]
+  \item[Least-Privilege-Permissions] Workflow-Default ist \texttt{permissions: \{\}};
+        jeder Job opt-in mit minimalen Scopes.
+  \item[Ephemere Runner] Nutzung von GitHub-hosted Runnern (frische VM pro Job);
+        Self-hosted bewusst nicht verwendet.
+  \item[Reproduzierbares Image] Multi-stage \texttt{Dockerfile} mit gepinntem
+        Base-Image, Non-Root-User (UID~10001), Read-only-Filesystem-tauglich.
+  \item[Dependency-Pinning] \texttt{requirements.txt} mit exakten Versionen;
+        Updates über Dependabot-PRs, die die volle Pipeline durchlaufen.
+\end{description}
+
+\subsection{Test- und Scan-Stufe}
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{SAST}: Bandit (Python) + GitHub CodeQL, Ergebnisse als SARIF in
+        die GitHub Code-Scanning-API.
+  \item \textbf{SCA}: \texttt{pip-audit} gegen die OSV-Datenbank, \texttt{--strict}
+        bricht den Build bei bekannter CVE ab.
+  \item \textbf{Container-Scan}: Trivy auf das gebaute Image,
+        \texttt{HIGH,CRITICAL} mit \texttt{exit-code: 1}.
+  \item \textbf{Coverage-Gate}: \texttt{pytest --cov-fail-under=80}.
+\end{itemize}
+
+\subsection{Package- und Sign-Stufe}
+\begin{description}[leftmargin=1.4em,style=nextline]
+  \item[SBOM] Syft erzeugt CycloneDX-JSON aus dem Image; das SBOM wird als
+        Attestation an das Image angeheftet.
+  \item[Cosign Keyless Signing] Signatur via Sigstore Fulcio mit dem
+        OIDC-Token des Workflows; keine langlebigen Schlüssel im Repo.
+  \item[SLSA-Provenance] \texttt{actions/attest-build-provenance} erzeugt eine
+        verifizierbare Provenance-Attestation (SLSA v1).
+\end{description}
+
+\subsection{Deploy-Stufe}
+\begin{description}[leftmargin=1.4em,style=nextline]
+  \item[OIDC-Federation] Cloud-Logins (Azure / AWS) erfolgen via OIDC --
+        keine statischen Cloud-Credentials in Repo-Secrets.
+  \item[Environments mit Approval] \texttt{production} ist GitHub-Environment
+        mit Pflicht-Reviewer und Wait-Timer.
+  \item[Cosign-Verify vor Deploy] Vor dem Rollout verifiziert der CD-Workflow
+        Signatur \emph{und} SLSA-Provenance des Image-Digests.
+  \item[Image-Pinning per Digest] Deployments referenzieren \texttt{@sha256:\dots},
+        nicht Tags.
+\end{description}
+
+\subsection{Auszug aus der CI-Implementierung}
+Listing~\ref{lst:ci} zeigt die Job-Topologie und die zentralen
+Sicherheits-Gates.
+
+\begin{lstlisting}[language=bash,caption={Auszug \texttt{.github/workflows/ci.yml}: Permissions \& Pin auf SHA},label={lst:ci}]
+permissions: {}              # default-deny
+
+jobs:
+  lint-test:
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with: { persist-credentials: false }
+  build-image:
+    needs: [lint-test, sast, sca, secret-scan]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write       # OIDC fuer cosign keyless
+      attestations: write
+\end{lstlisting}
+
+\begin{lstlisting}[language=bash,caption={Verifikation vor Deploy (\texttt{cd.yml})},label={lst:verify}]
+cosign verify \
+  --certificate-identity-regexp "https://github.com/$REPO/.github/workflows/.+" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  "$IMAGE"
+
+cosign verify-attestation --type slsaprovenance \
+  --certificate-identity-regexp "https://github.com/$REPO/.github/workflows/.+" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  "$IMAGE"
+\end{lstlisting}
+
+\subsection{Mapping Bedrohung $\to$ Maßnahme}
+\begin{longtable}{p{5.0cm} p{9.5cm}}
+\toprule
+\textbf{Bedrohung (Tab.~\ref{tab:stride})} & \textbf{Maßnahme} \\
+\midrule \endhead
+Maintainer-Credential-Diebstahl & MFA, signierte Commits, CODEOWNERS-Review \\
+Manipulation Pipeline-Definition & CODEOWNERS auf \texttt{.github/}, Required Checks \\
+Bösartige Dependency & pip-audit, Dependabot, Pinning, SBOM-Diff \\
+Base-Image-Replacement & Pinning + Trivy + Image-Digest in Deploy \\
+Zu weite \texttt{permissions} & default-deny + per-Job opt-in \\
+\texttt{pull\_request\_target} Leak & Trigger nicht verwendet; PRs ohne Secrets \\
+Tag-Hijack in Registry & Cosign-Verify + Digest-Pinning beim Deploy \\
+Fehlende Provenance & SLSA-Provenance via \texttt{attest-build-provenance} \\
+Long-lived Cloud-Creds & OIDC-Federation, keine statischen Secrets \\
+Fehlendes Approval Production & GitHub Environment Reviewer + Wait-Timer \\
+\bottomrule
+\caption{Bedrohungs--Maßnahmen-Matrix.}
+\end{longtable}
+
+\subsection{Fallstudie: \texttt{tj-actions/changed-files} (März 2025)}
+\label{sec:tjactions}
+Die Action \texttt{tj-actions/changed-files} wurde im März 2025
+kompromittiert: Angreifer überschrieben mehrere veröffentlichte Tags so,
+dass sie auf einen manipulierten Commit zeigten, der Secrets aus dem
+Runner-Memory in die Build-Logs exfiltrierte. Workflows, die die Action
+ohne SHA-Pinning eingebunden hatten (\texttt{tj-actions/changed-files@v44}),
+zogen automatisch die manipulierte Version. Über zehntausend Repositories
+waren betroffen, in mehreren Fällen wurden GitHub-PATs und Cloud-Credentials
+öffentlich auf GitHub-Logs sichtbar.
+
+Der Vorfall illustriert exakt die Bedrohungsklasse \emph{Source/Build-T}
+aus Tabelle~\ref{tab:stride}. Die in dieser Arbeit umgesetzte Maßnahme --
+durchgängiges Pinning aller Actions auf den Commit-SHA mit einem
+nachgestellten Versions-Kommentar -- hätte den Angriff vollständig
+neutralisiert: Selbst wenn der Tag \texttt{v44} auf einen bösartigen
+Commit umgehängt wird, verweist der Pin
+\texttt{tj-actions/changed-files@<sha>~\#~v44} weiterhin auf die
+auditierte Version. Sigstore/Cosign hätte die Auswirkung zusätzlich
+begrenzt, da das resultierende Artefakt keine gültige Signatur unter
+der OIDC-Identität des Workflows getragen hätte.
+
+% ────────────────────────────────────────────────────────
+\section{Evaluation}\label{sec:evaluation}
+
+\subsection{SLSA-Einstufung}
+Die umgesetzte Pipeline erreicht nach \cite{slsa}:
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Build L3}: gehosteter, ephemerer Builder; Provenance ist
+        nicht fälschbar (Sigstore-Signatur via OIDC); Build-Skript ist
+        versioniert.
+  \item \textbf{Source L2}: versioniert, retained history, Two-person review
+        via CODEOWNERS.
+\end{itemize}
+
+\subsection{OpenSSF Scorecard}
+Der Scorecard-Workflow läuft wöchentlich. Erwartete Scores $\geq$~8/10 für
+\emph{Branch-Protection}, \emph{Pinned-Dependencies}, \emph{Token-Permissions},
+\emph{Signed-Releases}, \emph{SAST}, \emph{Vulnerabilities}.
+
+\subsection{Coverage der STRIDE-Kategorien}
+Tabelle~\ref{tab:coverage} fasst zusammen, welche STRIDE-Kategorien durch die
+Maßnahmen mitigiert sind.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcl}
+\toprule
+\textbf{Kategorie} & \textbf{Mitigiert} & \textbf{Wesentliche Maßnahme} \\
+\midrule
+Spoofing & vollständig & OIDC, signierte Commits, Cosign \\
+Tampering & weitgehend & Pinning, Provenance, Verify-Gate \\
+Repudiation & vollständig & Provenance + Rekor-Transparency-Log \\
+Information Disclosure & weitgehend & gitleaks, least-privilege Tokens \\
+Denial of Service & teilweise & concurrency-cancel, Cache-Strategie \\
+Elevation of Privilege & vollständig & default-deny permissions, Environments \\
+\bottomrule
+\end{tabular}
+\caption{STRIDE-Coverage durch implementierte Maßnahmen.}
+\label{tab:coverage}
+\end{table}
+
+\subsection{Validierung gegen OWASP Top 10 CI/CD}\label{sec:owasp}
+Zur Plausibilisierung der STRIDE-Analyse wird die abgeleitete
+Maßnahmenliste zusätzlich gegen die OWASP-Top-10-CI/CD-Risiken
+\cite{owaspcicd} geprüft. Tabelle~\ref{tab:owasp} zeigt die Abdeckung.
+
+\begin{longtable}{p{0.9cm} p{4.8cm} p{8.2cm}}
+\toprule
+\textbf{Nr.} & \textbf{OWASP-Risiko} & \textbf{Wesentliche Maßnahme} \\
+\midrule \endhead
+CICD-1 & Insufficient Flow Control Mechanisms & Branch-Protection, CODEOWNERS, Environments mit Approval \\
+CICD-2 & Inadequate Identity \& Access Mgmt    & OIDC-Federation, least-privilege \texttt{permissions} \\
+CICD-3 & Dependency Chain Abuse                & Pinning, pip-audit, Dependabot, SBOM-Diff \\
+CICD-4 & Poisoned Pipeline Execution (PPE)     & Kein \texttt{pull\_request\_target}, CODEOWNERS auf \texttt{.github/} \\
+CICD-5 & Insufficient PBAC                     & Per-Job \texttt{permissions}, Environment-Reviewer \\
+CICD-6 & Insufficient Credential Hygiene       & gitleaks, Push-Protection, Cosign keyless (keine Long-lived Keys) \\
+CICD-7 & Insecure System Configuration         & Scorecard wöchentlich, Action-Pinning, default-deny Permissions \\
+CICD-8 & Ungoverned Usage of 3rd-Party Services & Kuratierte Action-Liste, SHA-Pin, Renovate/Dependabot Audit \\
+CICD-9 & Improper Artifact Integrity Validation & Cosign-Verify + SLSA-Provenance vor Deploy, Digest-Pinning \\
+CICD-10 & Insufficient Logging \& Visibility   & SARIF-Upload, Rekor Transparency-Log, Audit-Logs (org-level) \\
+\bottomrule
+\caption{Abdeckung der OWASP-Top-10-CI/CD-Risiken durch die
+implementierte Pipeline.}
+\label{tab:owasp}
+\end{longtable}
+
+Alle zehn Risikoklassen werden adressiert. CICD-10 ist organisatorisch
+abhängig (Audit-Logs auf Org-Ebene erfordern entsprechende
+GitHub-Enterprise-Konfiguration) und damit nur teilweise innerhalb der
+Pipeline selbst mitigierbar.
+
+\subsection{Restrisiken}
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Plattform-Kompromittierung} (GitHub, Sigstore): nicht durch
+        die Pipeline mitigierbar; Vertrauensanker.
+  \item \textbf{Insider mit Admin-Rechten} kann Branch-Protection deaktivieren.
+        Mitigation: Audit-Logging, Org-Policies.
+  \item \textbf{Zero-Day in transitiver Abhängigkeit} -- pip-audit erkennt nur
+        bekannte CVEs.
+  \item \textbf{Secret-Exfiltration via Build-Logs} bei fahrlässigem
+        \texttt{echo}; nur durch Code-Review und \texttt{add-mask} mitigierbar.
+\end{itemize}
+
+\subsection{Zielkonflikt Geschwindigkeit vs.\ Assurance}
+Strikte Gates (HIGH/CRITICAL fail, Coverage~80\,\%, manuelle Approvals)
+verlangsamen Deployments. Die Pipeline mildert dies durch parallele Jobs,
+GHA-Caches und \texttt{concurrency: cancel-in-progress} für PRs. Production
+behält bewusst eine Approval-Hürde -- Geschwindigkeit darf hier nicht über
+Assurance dominieren.
+
+\subsection{Faktor Mensch und Anreize}\label{sec:humanfactor}
+Technische Mechanismen entfalten ihre Wirkung nur, wenn die
+beteiligten Akteure -- Entwickler, Reviewer, Plattform-Administratoren --
+sie auch konsequent anwenden. Drei Spannungsfelder sind in der Praxis
+besonders relevant.
+
+\paragraph{Geschwindigkeit vs.\ Reibung.}
+Sicherheits-Gates wie Coverage-Schwellen, signierte Commits oder
+Manual-Approval-Schritte verlangsamen den Feedback-Zyklus. Wird die
+Reibung als unverhältnismäßig empfunden, neigen Teams dazu,
+Schutzmaßnahmen zu umgehen -- etwa durch \texttt{[skip ci]}-Commits,
+\texttt{--no-verify} bei pre-commit-Hooks oder das pauschale
+Akzeptieren von \texttt{HIGH}-Findings als \enquote{false positive}.
+Die Pipeline mildert dies, indem sie schnelle Jobs (Lint, Tests)
+parallel zu langsamen (CodeQL, Trivy) ausführt und PRs bei neuen
+Commits via \texttt{cancel-in-progress} abbricht.
+
+\paragraph{Ownership-Diffusion.}
+\enquote{Security ist Aufgabe des Security-Teams} ist ein verbreitetes
+Anti-Pattern. CODEOWNERS verschiebt das Eigentum für sicherheits\-kritische
+Pfade (\texttt{.github/}, \texttt{Dockerfile}) explizit auf die
+Pipeline-Verantwortlichen und macht Reviews damit zum
+unumgehbaren Default. Die OpenSSF-Scorecard liefert wiederum eine
+\emph{externe} Bewertung, die Diskussionen über Posture-Defizite
+versachlicht.
+
+\paragraph{Alarmmüdigkeit.}
+Eine Pipeline, die bei jedem Push fünfzig Findings produziert, wird
+ignoriert. Die Implementierung adressiert dies durch die Trennung in
+Build-Breaker (\texttt{HIGH,CRITICAL}, mit \texttt{ignore-unfixed: true})
+und reine Reportings via SARIF. Damit bleibt jeder Build-Abbruch
+handlungsrelevant, und Findings ohne unmittelbaren Fix verschwinden
+nicht aus der Sicht (Code-Scanning-View), erzwingen aber keinen
+Stillstand.
+
+\paragraph{Anreiz für Maintainer.}
+Dependabot erzeugt Updates als kleine, isolierte PRs, die die volle
+Pipeline durchlaufen. Damit wird das Aktualisieren von Abhängigkeiten
+zur \emph{billigsten} statt zur teuersten Option -- ein klassischer
+Anreiz-Hebel im Sinne des Security-Engineering-Frameworks
+(Tab.~\ref{tab:seframework}).
+
+% ────────────────────────────────────────────────────────
+\section{Fazit und Ausblick}\label{sec:fazit}
+
+Die Arbeit zeigt, dass sich eine moderne CI/CD-Pipeline mit
+zugänglichen Mitteln (GitHub Actions, Sigstore, Trivy, Syft) systematisch
+entlang einer STRIDE-Analyse absichern lässt und dabei nachweisbare
+Eigenschaften gemäß SLSA erreicht. Wesentlich ist nicht das einzelne Tool,
+sondern die Kombination: \emph{least-privilege Identitäten, gepinnte
+Abhängigkeiten, signierte Artefakte mit Provenance, verifizierte Deployments}.
+
+Weiterführende Arbeiten könnten:
+\begin{itemize}[leftmargin=1.4em]
+  \item die Übertragbarkeit der Maßnahmen auf GitLab~CI quantitativ
+        vergleichen,
+  \item Policy-as-Code (z.\,B.\ Kyverno, Sigstore Policy Controller im Cluster)
+        als zusätzliche Verifikationsschicht ergänzen,
+  \item formale Analysen zu Pipeline-Konfigurationen (z.\,B.\ \texttt{zizmor},
+        \texttt{actionlint}) mit Beweisbarkeit der \emph{permissions}-Minimalität
+        verbinden.
+\end{itemize}
+
+% ────────────────────────────────────────────────────────
+\begin{thebibliography}{9}
+\bibitem{slsa} OpenSSF, \emph{Supply-chain Levels for Software Artifacts (SLSA) v1.0}, \url{https://slsa.dev/spec/v1.0/}, abgerufen 2026.
+\bibitem{ssdf} NIST, \emph{Secure Software Development Framework (SSDF) Version 1.1}, SP\,800-218, 2022.
+\bibitem{stride} Microsoft, \emph{The STRIDE Threat Model}, Microsoft Learn, abgerufen 2026.
+\bibitem{scorecard} OpenSSF, \emph{Scorecard}, \url{https://github.com/ossf/scorecard}, abgerufen 2026.
+\bibitem{sigstore} Sigstore Project, \emph{Cosign / Fulcio / Rekor}, \url{https://www.sigstore.dev/}, abgerufen 2026.
+\bibitem{owaspcicd} OWASP, \emph{Top 10 CI/CD Security Risks}, \url{https://owasp.org/www-project-top-10-ci-cd-security-risks/}, abgerufen 2026.
+\end{thebibliography}
+
+\end{document}

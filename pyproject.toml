@@ -1,0 +1,12 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "S", "UP", "SIM"]
+# Tests may use assert, allow it.
+per-file-ignores = { "app/tests/*" = ["S101"] }
+
+[tool.pytest.ini_options]
+testpaths = ["app/tests"]
+addopts = "-q"
