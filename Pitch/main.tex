@@ -20,7 +20,7 @@
 \newcommand{\supervisor}{Prof.\ Dr.\ Martin Schramm}
 \newcommand{\studentA}{Christof Renner (22301943)}
 \newcommand{\studentB}{Manuel Friedl (12306626)}
-\newcommand{\submissiondate}{20.\ April 2026}
+\newcommand{\submissiondate}{29.\ April 2026}
 
 \begin{document}
 
@@ -53,47 +53,46 @@
 \end{titlepage}
 
 % ── Pitchseite ──────────────────────────────────────────
-\section*{Pitch}
 
 \section*{Ausgangslage und Motivation}
 Moderne Softwareentwicklung basiert auf hochgradig automatisierten Build-, Test- und
 Deployment-Prozessen. Diese CI/CD-Pipelines sind tief in cloud-native Infrastrukturen
 integriert und verfügen über weitreichende Zugriffsrechte auf sensible Ressourcen wie
 Secrets, Container-Registries und Produktionsumgebungen. Angriffe auf
-Softwarelieferketten -- etwa SolarWinds (2020) oder der 3CX-Vorfall (2023) -- belegen,
-dass der Entwicklungsprozess selbst zu einem primären Angriffsziel geworden ist. Im
-Sinne des Security Engineering soll daher nicht ein einzelnes Tool, sondern die
-sicherheitstechnische Analyse des gesamten Pipeline-Systems im Vordergrund stehen.
+Softwarelieferketten -- etwa SolarWinds (2020), Codecov (2021) oder zuletzt
+\texttt{tj-actions/changed-files} (2025) -- belegen, dass der Entwicklungsprozess
+selbst zu einem primären Angriffsziel geworden ist. Im Sinne des Security Engineering
+soll daher nicht ein einzelnes Tool, sondern die sicherheitstechnische Analyse des
+gesamten Pipeline-Systems im Vordergrund stehen.
 
 \section*{Zielsetzung}
-Ziel der Arbeit ist es, eine repräsentative CI/CD-Pipeline systematisch unter
-Sicherheitsgesichtspunkten zu untersuchen. Im Mittelpunkt stehen dabei die
-Identifikation schützenswerter Assets (Quellcode, Build-Artefakte, Secrets,
-Deployment-Credentials), relevanter Trust Boundaries sowie möglicher Angreifer, ihrer
-Fähigkeiten und Motivation. Darauf aufbauend sollen wesentliche Bedrohungen für
-zentrale Pipeline-Stufen herausgearbeitet und hinsichtlich ihrer Relevanz für das
-Gesamtsystem eingeordnet werden.
+Ziel der Arbeit ist eine systematische sicherheitstechnische Betrachtung einer
+repräsentativen CI/CD-Pipeline. Im Mittelpunkt stehen die Identifikation
+schützenswerter Assets (Quellcode, Build-Artefakte, Secrets, Deployment-Credentials),
+relevanter Trust Boundaries sowie eines mehrstufigen Angreifermodells.
+Darauf aufbauend werden zentrale Bedrohungen je Pipeline-Stufe herausgearbeitet,
+geeignete Schutzmechanismen abgeleitet und ihre Wirksamkeit kritisch bewertet.
 
 \section*{Methodisches Vorgehen}
-Zunächst wird eine exemplarische CI/CD-Pipeline modelliert (z.\,B.\ auf Basis von
-GitHub Actions oder GitLab CI), um sicherheitsrelevante Übergänge und
-Angriffsflächen sichtbar zu machen. Anschließend erfolgt eine strukturierte
-Bedrohungsanalyse auf Basis von STRIDE, angewendet auf die einzelnen
-Pipeline-Stufen (Source $\rightarrow$ Build $\rightarrow$ Test $\rightarrow$ Deploy).
-Für die identifizierten Bedrohungen werden geeignete technische
-Sicherheitsmechanismen abgeleitet und begründet -- darunter Secret Management,
-Software Bill of Materials (SBOM), Code-Signing, Branch-Protection-Policies sowie
-Runner-Isolation. Abschließend wird bewertet, inwieweit diese Maßnahmen die
-Sicherheitslage des Systems tatsächlich verbessern, und verbleibende Restrisiken
-werden transparent gemacht.
+Zunächst wird eine prototypische, container-basierte Pipeline modelliert, um
+sicherheitsrelevante Übergänge und Angriffsflächen sichtbar zu machen. Anschließend
+erfolgt eine strukturierte Bedrohungsanalyse auf Basis von STRIDE, ergänzt um eine
+Validierung gegen einschlägige Industrie-Frameworks. Aus den identifizierten
+Bedrohungen werden technische und organisatorische Sicherheitsmechanismen abgeleitet
+-- etwa zu Identitäts- und Zugriffsmanagement, Supply-Chain-Integrität, Artefakt-Signierung
+und kontrollierten Deployment-Prozessen. Begleitend wird ein praktischer Prototyp auf
+einer modernen Pipeline-Plattform aufgebaut, der die wesentlichen Maßnahmen
+demonstrierbar macht. Abschließend wird die Pipeline anhand etablierter Reifegrad- und
+Posture-Modelle (z.\,B.\ SLSA, OpenSSF Scorecard) evaluiert.
 
 \section*{Erwarteter Mehrwert}
 Die Arbeit soll zeigen, wie sich ein moderner DevOps-Prozess im Sinne des Security
-Engineering nicht nur funktional, sondern auch methodisch absichern lässt. Das
-angestrebte Ergebnis ist ein nachvollziehbares und praxisnahes Sicherheitskonzept,
-das typische Bedrohungen einer CI/CD-Pipeline systematisch erfasst, geeignete
-Gegenmaßnahmen begründet und den Zielkonflikt zwischen Deployment-Geschwindigkeit
-und Security-Assurance -- inklusive der zugrundeliegenden Anreizstrukturen -- transparent
-macht.
+Engineering nicht nur funktional, sondern auch methodisch absichern lässt. Über die
+rein technische Betrachtung hinaus werden insbesondere die Anreizstrukturen
+adressiert: Welche Mechanismen sind nicht umgehbar, welche werden in der Praxis
+ausgehebelt, und wo bleibt der Faktor Mensch trotz aller Automatisierung
+ausschlaggebend? Das angestrebte Ergebnis ist ein nachvollziehbares und praxisnahes
+Sicherheitskonzept, das typische Bedrohungen einer CI/CD-Pipeline systematisch erfasst,
+Gegenmaßnahmen begründet und verbleibende Restrisiken transparent macht.
 
 \end{document}
