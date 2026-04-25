@@ -119,9 +119,10 @@ repräsentativen CI/CD-Pipeline. Konkret werden:
 \subsection{Abgrenzung}
 Nicht Gegenstand der Arbeit sind: vollständige Härtung des Cloud-Tenants,
 Penetrationstests der Pipeline-Plattform selbst sowie organisatorische
-Maßnahmen jenseits der Branch-Protection-Konfiguration. Die Pipeline wird auf
-GitHub Actions umgesetzt; die Übertragbarkeit auf GitLab~CI wird qualitativ
-diskutiert.
+Maßnahmen jenseits der Branch-Protection-Konfiguration. Die Pipeline wird
+auf GitHub Actions umgesetzt; die Übertragbarkeit auf GitLab~CI wird
+nicht im Detail untersucht und in Kapitel~\ref{sec:fazit} lediglich als
+weiterführende Forschungsrichtung benannt.
 
 \subsection{Aufbau der Arbeit}
 Kapitel~\ref{sec:grundlagen} klärt die Begriffe DevSecOps, Supply-Chain-Security
@@ -288,6 +289,7 @@ Drei relevante Profile werden betrachtet:
 % ────────────────────────────────────────────────────────
 \section{Bedrohungsanalyse (STRIDE)}\label{sec:threatmodel}
 
+\subsection{STRIDE-Mapping pro Pipeline-Stufe}
 Die folgende Tabelle dokumentiert pro Pipeline-Stufe die wesentlichen
 Bedrohungen, klassifiziert nach STRIDE. Die Risiko-Einstufung folgt einer
 qualitativen Skala (niedrig/mittel/hoch) auf Basis von Eintrittswahrscheinlichkeit
@@ -317,6 +319,231 @@ Deploy & I & Verbose Logs leaken Tokens / PII & A1 & mittel \\
 \caption{STRIDE-Mapping der untersuchten Pipeline.}
 \label{tab:stride}
 \end{longtable}
+
+\subsection{Threat Walkthroughs}\label{sec:walkthroughs}
+Die kondensierte Tabellenform aus Tabelle~\ref{tab:stride} verdichtet
+Bedrohungen, verschleiert aber ihre tatsächliche \emph{Verkettung}. Reale
+Angriffe auf CI/CD-Systeme bestehen selten aus einem einzelnen Schritt;
+charakteristisch ist die schrittweise Eskalation entlang der Trust
+Boundaries. Im Folgenden werden drei repräsentative Bedrohungen aus
+Tabelle~\ref{tab:stride} als ausformulierte Angriffsketten dargestellt --
+inklusive Voraussetzungen, Eskalationsschritten, Erkennungs- und
+Mitigationspunkten.
+
+\paragraph{Walkthrough 1 -- Bösartige transitive Dependency
+(Build-T, A1).}
+\textit{Voraussetzung:} Eine populäre, indirekt eingezogene Abhängigkeit
+wird durch einen kompromittierten Maintainer-Account aktualisiert; die
+neue Version enthält eine Post-Install-Routine, die Umgebungsvariablen
+und \texttt{\textasciitilde/.aws/credentials} an einen externen
+HTTP-Endpunkt sendet.
+
+\textit{Schritt 1 -- Aufnahme.} Im Zielprojekt erstellt Dependabot
+plangemäß einen wöchentlichen Update-PR. Reviewer prüfen den Diff der
+\texttt{requirements.txt}, sehen jedoch nur einen scheinbar
+harmlosen Versionssprung der direkten Abhängigkeit; die
+\emph{transitive} Aktualisierung ist im Diff nicht sichtbar.
+
+\textit{Schritt 2 -- Build-Stufe.} Der CI-Runner installiert die
+Abhängigkeit; die Post-Install-Routine läuft mit den
+Umgebungs-Permissions des Workflows.
+
+\textit{Schritt 3 -- Exfiltration.} Der Schadcode greift auf
+\texttt{\$GITHUB\_TOKEN} und auf etwaig gemountete Cloud-Credentials zu
+und sendet sie an den Angreifer-Endpunkt.
+
+\textit{Erkennung.} pip-audit prüft die finale Resolverliste gegen die
+OSV-Datenbank, fängt aber nur Versionen mit bereits öffentlich
+bekannter CVE. Eine \emph{frische} Kompromittierung wird in den ersten
+Stunden nicht erkannt -- hier ist die zweite Verteidigungslinie nötig:
+SBOM-Diff (Abschnitt~\ref{sec:sbomlifecycle}) hebt das neue Paket
+sichtbar hervor, und Egress-Restriktionen auf dem Runner können den
+Exfiltrationsversuch blockieren.
+
+\textit{Mitigation in der Pipeline.} Drei Maßnahmen wirken zusammen:
+(1)~\texttt{permissions: \{\}} als Default reduziert die Reichweite des
+\texttt{GITHUB\_TOKEN}; (2)~\texttt{persist-credentials: false} bei
+\texttt{actions/checkout} verhindert, dass das Token im
+\texttt{.git/config} liegen bleibt; (3)~die Cloud-Federation per OIDC
+ohne langlebige Secrets im Repo entzieht dem Angreifer das wertvollste
+Ziel.
+
+\textit{Restrisiko.} Der Angriff bleibt möglich, solange transitive
+Updates nicht zwingend an einer kuratierten Allowlist hängen; eine
+weitergehende Härtung wäre der Einsatz eines Privat-Mirrors mit
+Repository-Manager (z.\,B.\ Sonatype Nexus) und manueller Freigabe
+neuer Versionen.
+
+\paragraph{Walkthrough 2 -- Manipulation der Pipeline-Definition via PR
+(Source-T, A2).}
+\textit{Voraussetzung:} Ein Kontributor mit \enquote{Triage}-Rolle (oder
+ein Forker mit angenommenem PR-Template) reicht einen unscheinbaren
+Pull-Request ein, der nicht den Anwendungscode, sondern eine Datei
+unter \texttt{.github/workflows/} ändert -- etwa um einen zusätzlichen
+Schritt einzufügen, der \texttt{secrets.AWS\_DEPLOY\_KEY} in einen
+publizistischen Webhook schreibt.
+
+\textit{Schritt 1 -- Tarnung.} Der PR ist optisch ein
+\enquote{Refactoring}: Der Workflow wird in mehrere Teildateien
+zerlegt, dabei werden zusätzliche \texttt{run:}-Schritte eingefügt.
+Reviewer ohne explizit gepflegte CODEOWNERS-Regeln neigen dazu, den
+Diff zu überfliegen.
+
+\textit{Schritt 2 -- Trigger.} Der Angreifer wartet darauf, dass ein
+Maintainer den PR mergt. Sobald der Workflow auf \texttt{main} läuft,
+führt der eingefügte Schritt aus -- mit den vollen
+\texttt{secrets.\textasciitilde}-Werten der Pipeline.
+
+\textit{Erkennung.} CODEOWNERS auf \texttt{/.github/} verschiebt den
+Review zwingend an die im Repo deklarierten
+Pipeline-Verantwortlichen; OpenSSF Scorecard markiert das Fehlen
+dieser Regel als Posture-Defizit. \texttt{actionlint} und
+\texttt{zizmor} können in der CI selbst auf typische
+PPE-Antipatterns prüfen.
+
+\textit{Mitigation in der Pipeline.} CODEOWNERS auf
+\texttt{/.github/}, Required-Status-Checks für jede
+Pipeline-Änderung, sowie die Regel, dass \texttt{secrets} nur in Jobs
+verfügbar sind, die einem Environment mit Approval zugeordnet sind.
+
+\textit{Restrisiko.} Ein Insider mit Admin-Rechten kann CODEOWNERS
+selbst ändern. Hier hilft nur Org-weites Audit-Logging mit Alarm bei
+Änderungen an Branch-Protection-Konfigurationen.
+
+\paragraph{Walkthrough 3 -- Tag-Hijack in der Registry
+(Pkg-T, A1).}
+\textit{Voraussetzung:} Der Angreifer hat sich Schreibzugriff auf den
+Registry-Namespace verschafft -- z.\,B.\ über einen kompromittierten
+Service-Account-Token, der versehentlich in einem öffentlichen Issue
+gepostet wurde.
+
+\textit{Schritt 1 -- Repush.} Der Angreifer baut lokal ein bösartiges
+Image, vergibt denselben Tag wie das letzte Release
+(\texttt{ghcr.io/org/app:1.4.2}) und pusht es. Der Manifest-Digest
+ändert sich; der Tag zeigt jetzt auf das neue Manifest.
+
+\textit{Schritt 2 -- Pull bei Deployment.} Ein
+Deployment-Skript, das nur den Tag referenziert, zieht beim nächsten
+Rollout das manipulierte Image.
+
+\textit{Erkennung.} Der CD-Workflow verifiziert vor dem Rollout per
+\texttt{cosign verify} sowohl die Signatur (gegen die OIDC-Identität
+des CI-Workflows) als auch die SLSA-Provenance-Attestation. Beide
+Checks schlagen für das manipulierte Image fehl, da der Angreifer keine
+gültige Signatur unter dem CI-Workflow-OIDC-Issuer erzeugen kann; das
+Rekor-Transparency-Log macht solche Manipulationen darüber hinaus
+öffentlich auditierbar.
+
+\textit{Mitigation in der Pipeline.} Im CD-Workflow erfolgt die
+Verifikation \emph{vor} jedem Deploy; die Deploy-Schritte
+referenzieren ausschließlich den Image-Digest
+(\texttt{@sha256:\dots}), nicht den Tag.
+
+\textit{Restrisiko.} Ein Angriff auf Sigstore selbst ist nicht
+unmittelbar mitigierbar -- daher die Listung von Sigstore als
+Vertrauensanker in Abschnitt~\ref{sec:system}.
+
+\subsection{Vertiefung: Poisoned Pipeline Execution (PPE)}
+\label{sec:ppe}
+Die Bedrohungen \emph{Build-T} (Manipulation Pipeline-Definition) und
+\emph{Build-E} (\texttt{pull\_request\_target} mit Secrets) aus
+Tabelle~\ref{tab:stride} sind manifestationen einer übergeordneten
+Klasse, die OWASP als \emph{Poisoned Pipeline Execution}
+\cite{owaspcicd} beschreibt. PPE bezeichnet jeden Angriff, der den
+\enquote{Konfigurations-als-Code}-Charakter moderner CI-Systeme
+ausnutzt: Wer den Workflow ändern darf, kontrolliert -- transitiv --
+alle Aktionen, die in seinem Kontext ablaufen.
+
+\paragraph{Direkte und indirekte PPE.}
+Direkte PPE liegt vor, wenn der Angreifer die Pipeline-Definition
+selbst modifiziert (z.\,B.\ als Maintainer mit Push-Recht). Indirekte
+PPE nutzt Trigger aus, die \emph{trotz} fehlender Schreibrechte
+Code im Kontext der Pipeline ausführen. Der prominenteste Vektor in
+GitHub Actions ist der Trigger
+\texttt{pull\_request\_target}.
+
+\paragraph{Anatomie von \texttt{pull\_request\_target}.}
+Im Gegensatz zum Standard-Trigger \texttt{pull\_request} -- der den
+Workflow im Kontext des PR-Branches ohne Zugriff auf
+\texttt{secrets} ausführt -- läuft \texttt{pull\_request\_target}
+im Kontext des Ziel-Branches \emph{mit} vollem Secret-Zugriff. Der
+Trigger wurde geschaffen, um Aktionen wie automatisches Labeling
+auch für Forks zu ermöglichen, bei denen der Forker keinen
+Schreibzugriff auf das Ziel-Repository besitzt. Genau diese Kombination
+(Code-Quelle = Fork, Secrets = Original-Repo) ist die Kernschwäche.
+
+Ein typischer fehlerhafter Workflow checkt zusätzlich den PR-HEAD aus
+und führt dort Skripte aus:
+
+\begin{lstlisting}[language=bash,caption={Anti-Pattern: \texttt{pull\_request\_target} mit unsicherem Checkout},label={lst:ppe}]
+on:
+  pull_request_target:        # laeuft im Ziel-Repo-Kontext mit Secrets
+    types: [opened, synchronize]
+jobs:
+  ci:
+    steps:
+      - uses: actions/checkout@<sha>   # OK: HEAD = Ziel-Branch
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}  # PROBLEM!
+      - run: npm ci && npm test        # PROBLEM: laedt + fuehrt Fork-Code aus
+\end{lstlisting}
+
+Ein bösartiger Forker fügt seinem PR-Branch einen
+\texttt{postinstall}-Hook in der \texttt{package.json} hinzu, der die
+Werte aller Umgebungsvariablen exfiltriert. Beim ersten
+\texttt{npm ci} im Workflow läuft dieser Hook -- inklusive Zugriff auf
+\texttt{secrets.NPM\_TOKEN}, \texttt{secrets.AWS\_*} und das
+\texttt{GITHUB\_TOKEN} mit Schreibrecht auf das Original-Repo.
+
+\paragraph{Codecov 2021 als Realbeispiel.}
+Im April 2021 wurde der Codecov-Bash-Uploader durch einen Fehler in
+einem Docker-Image-Build kompromittiert; in der Folge konnten
+Angreifer rund zwei Monate lang Umgebungsvariablen aus
+CI-Umgebungen exfiltrieren, die den Uploader integriert hatten. Der
+Vorfall war zwar kein klassischer PPE-Fall, illustriert aber die
+gleiche Kausalkette: ein in einem Pipeline-Schritt ausgeführtes
+Skript, das implizit Zugriff auf alle Secrets erhält, die im Kontext
+des Workflows verfügbar sind. Branchenweite Reaktion war eine
+Auseinandersetzung mit dem Trigger-Modell und der
+Secret-Sichtbarkeit.
+
+\paragraph{Mitigation in der hier umgesetzten Pipeline.}
+Die folgenden konstruktiven Entscheidungen schließen die
+PPE-Klasse weitgehend:
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Kein \texttt{pull\_request\_target}.} Der CI-Workflow
+        verwendet ausschließlich den sicheren \texttt{pull\_request}-Trigger;
+        Aktionen mit Secret-Bedarf (z.\,B.\ Image-Push) werden bei PRs
+        per \texttt{if: github.event\_name != 'pull\_request'}
+        ausgesperrt.
+  \item \textbf{CODEOWNERS auf \texttt{/.github/}.} Jede
+        Workflow-Änderung erfordert ein Review der designierten
+        Pipeline-Verantwortlichen; das Vier-Augen-Prinzip wird damit auf
+        die kritischste Datei-Klasse angewendet.
+  \item \textbf{Default-deny \texttt{permissions: \{\}}.} Selbst
+        wenn ein PPE-Angriff Code im Workflow-Kontext zur Ausführung
+        bringt, ist das verfügbare \texttt{GITHUB\_TOKEN} ohne
+        Schreibrechte und kann weder Branches noch Releases
+        manipulieren.
+  \item \textbf{OIDC-Federation statt langlebiger Secrets.}
+        Cloud-Zugriffe verwenden kurzlebige, an die OIDC-Identität des
+        Workflows gebundene Tokens. Selbst eine erfolgreiche
+        Exfiltration nutzt dem Angreifer wenig, da die Tokens auf
+        Minutenbasis ablaufen und an die Workflow-Run-ID gebunden sind.
+  \item \textbf{\texttt{persist-credentials: false}.} Der
+        \texttt{GITHUB\_TOKEN} wird nach \texttt{actions/checkout}
+        nicht in \texttt{.git/config} verewigt; ein nachgelagertes
+        Skript hat damit keinen Hebel mehr.
+\end{itemize}
+
+\paragraph{Verbleibende PPE-Risiken.}
+Eine vollständige Immunität ist nicht erreichbar. Eine
+Kompromittierung der GitHub-Plattform selbst, eine Schwachstelle in
+einer als Dependency genutzten Action (vgl.\ Fallstudie
+\texttt{tj-actions} in Abschnitt~\ref{sec:tjactions}) oder ein
+Insider mit Administrationsrechten am Repo bleiben außerhalb der
+Reichweite der hier diskutierten Maßnahmen. Diese Risiken werden in
+Abschnitt~\ref{sec:restrisks} explizit als Restrisiken geführt.
 
 % ────────────────────────────────────────────────────────
 \section{Gegenmaßnahmen und Implementierung}\label{sec:countermeasures}
@@ -367,6 +594,130 @@ Deploy & I & Verbose Logs leaken Tokens / PII & A1 & mittel \\
   \item[SLSA-Provenance] \texttt{actions/attest-build-provenance} erzeugt eine
         verifizierbare Provenance-Attestation (SLSA v1).
 \end{description}
+
+\subsection{SBOM-Lebenszyklus}\label{sec:sbomlifecycle}
+Eine \emph{Software Bill of Materials} (SBOM) listet alle direkten und
+transitiven Komponenten eines Artefakts auf. Sie ist kein einzelner
+Sicherheitsmechanismus, sondern der zentrale \emph{Datensatz}, auf dem
+mehrere Mechanismen aufsetzen: Schwachstellen-Diff, Lizenz-Tracking,
+Compliance-Nachweise und langfristige Reproduzierbarkeit. Die
+Implementierung folgt dem in Abbildung~\ref{fig:sbom} skizzierten
+Lebenszyklus.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+  node distance=0.45cm and 0.55cm,
+  sbomstep/.style={rectangle, rounded corners, draw=thblue, thick,
+               fill=thblue!8, minimum width=2.6cm, minimum height=0.9cm,
+               align=center, font=\footnotesize},
+  arrow/.style={-Stealth, thick, thblue}
+]
+  \node[sbomstep] (gen)    {Generate\\(Syft)};
+  \node[sbomstep, right=of gen]   (att)   {Attest\\(Cosign)};
+  \node[sbomstep, right=of att]   (push)  {Push\\(Registry)};
+  \node[sbomstep, right=of push]  (verify){Verify\\(CD)};
+  \node[sbomstep, right=of verify](diff)  {Diff /\\Monitor};
+
+  \draw[arrow] (gen)    -- (att);
+  \draw[arrow] (att)    -- (push);
+  \draw[arrow] (push)   -- (verify);
+  \draw[arrow] (verify) -- (diff);
+\end{tikzpicture}
+\caption{SBOM-Lebenszyklus: Erzeugung, Attestation, Verteilung,
+Verifikation, kontinuierliches Monitoring.}
+\label{fig:sbom}
+\end{figure}
+
+\paragraph{1.~Erzeugung mit Syft.}
+Syft (Anchore) inspiziert das gebaute Image schichtweise und erkennt
+Pakete von Distribution-Manager (\texttt{apt}), Sprach-Manager
+(\texttt{pip}, \texttt{npm}, \texttt{gem}) sowie statisch eingebundene
+Bibliotheken. Ausgabeformat ist CycloneDX in JSON, weil dies zusätzlich
+zur reinen Komponentenliste auch \emph{Beziehungen} (\texttt{depends-on},
+\texttt{contains}) und Hashes erfasst -- beides ist für spätere
+Verifikation entscheidend.
+
+\paragraph{2.~Attestation mit Cosign.}
+Statt das SBOM lose neben dem Image zu lagern (klassisches
+\texttt{sbom.json} im Release-Asset-Ordner), wird es als signierte
+\emph{Attestation} an den Image-Digest gebunden:
+\texttt{cosign attest --predicate sbom.cdx.json --type cyclonedx}.
+Damit ist das SBOM kryptographisch an genau das Image gekettet, das
+es beschreibt -- und manipulierte SBOM-Kopien lassen sich erkennen.
+
+\paragraph{3.~Verteilung über die Registry.}
+Cosign legt Attestations als zusätzliche OCI-Manifeste neben dem
+eigentlichen Image ab; Pull-Clients holen sie auf Wunsch
+(\texttt{cosign download attestation}). Vorteile: keine zweite
+Distributionspipeline, keine zusätzlichen Zugriffsrechte, keine
+abweichende Aufbewahrungsdauer.
+
+\paragraph{4.~Verifikation vor Deploy.}
+Der CD-Workflow ruft \texttt{cosign verify-attestation} mit
+\texttt{--type cyclonedx} und \texttt{--certificate-identity-regexp}
+auf, der nur Attestations der erwarteten CI-Workflow-Identität
+akzeptiert. Damit wird eine angeheftete SBOM-Manipulation durch einen
+externen Angreifer mit Registry-Zugriff zur Pipeline-Stufe
+\emph{vor} dem Rollout sichtbar.
+
+\paragraph{5.~Kontinuierliches Monitoring (SBOM-Diff).}
+Der eigentliche operative Wert eines SBOM entsteht erst nach
+Auslieferung. Bei jedem Build vergleicht ein nachgelagerter Schritt
+die neue SBOM gegen die letzte gepushte Version desselben
+Stream-Tags. Drei Fragen werden beantwortet:
+\begin{enumerate}[leftmargin=1.4em]
+  \item \textbf{Welche Pakete sind hinzugekommen?} Neue transitive
+        Abhängigkeiten sind das primäre Eintrittsfenster für
+        Supply-Chain-Angriffe (vgl.\ Walkthrough~1 in
+        Abschnitt~\ref{sec:walkthroughs}).
+  \item \textbf{Welche Versionen haben sich geändert?} Ein
+        Versionssprung über mehrere Major-Releases hinweg ist ein
+        Signal für übersehene Major-Updates und sollte einen Reviewer
+        zwingen, das Changelog zu prüfen.
+  \item \textbf{Sind bekannte CVEs hinzugekommen?} Werkzeuge wie
+        \texttt{grype} oder \texttt{trivy sbom} korrelieren die SBOM
+        gegen die OSV/NVD-Datenbanken; das ist günstiger als ein
+        kompletter Image-Scan und lässt sich gegen \emph{historische}
+        Artefakte ausführen, die in Produktion noch laufen.
+\end{enumerate}
+
+\paragraph{6.~Aufbewahrung und Auskunft.}
+SBOMs müssen über die Lebensdauer des Artefakts verfügbar bleiben --
+für eine Library, die sieben Jahre verkauft wird, also potenziell
+deutlich länger als ein typischer Container-Lebenszyklus
+(vgl.\ die in Abschnitt~\ref{sec:grundlagen} erwähnte
+Software-Sustainability-Diskussion). Die Bindung der Attestation an
+den Image-Digest und die Hinterlegung im Sigstore-Rekor-Log adressiert
+das auch dann, wenn die ursprüngliche Pipeline-Konfiguration nicht
+mehr existiert.
+
+\paragraph{Bezug zum Cyber Resilience Act (CRA).}
+Mit dem \emph{Cyber Resilience Act}~\cite{cra} der EU werden SBOMs
+ab Ende 2027 für \enquote{Produkte mit digitalen Elementen} eine
+verpflichtende technische Dokumentation. Hersteller müssen eine SBOM
+für jedes vermarktete Produkt führen und Behörden auf Anfrage
+verfügbar machen; bei \enquote{important} bzw.\ \enquote{critical}
+Produkten kommen erweiterte Pflichten hinzu (Conformity Assessment,
+Vulnerability Handling, Coordinated Disclosure). Die hier umgesetzte
+Pipeline erfüllt die kommenden technischen Anforderungen \emph{by
+construction}: SBOM wird automatisiert erzeugt, an das Artefakt
+gebunden, signiert verteilt und ist über das Rekor-Log
+nachvollziehbar. Die organisatorischen CRA-Pflichten (z.\,B.\
+24h-Reporting bei aktiv ausgenutzten Schwachstellen) bleiben außerhalb
+des Pipeline-Scopes, sind aber durch die SECURITY.md-Policy und das
+Vulnerability-Disclosure-Verfahren des Repositories vorbereitet.
+
+\paragraph{Grenzen.}
+Eine SBOM ist nur so vollständig wie der Generator. Statisch
+eingebettete C-Bibliotheken in Wheel-Distributionen,
+vendoring-basierte Build-Systeme und nachgeladene Plugins entgehen
+einer rein paketmanager-basierten Erkennung; entsprechende Pakete
+landen unentdeckt im Image. Die hier verwendete Kombination aus
+Multi-Stage-\texttt{Dockerfile} mit gepinnten Versionen und
+Container-Scan (Trivy) auf das fertige Image kompensiert das
+teilweise, beseitigt aber nicht das grundsätzliche
+Vollständigkeitsproblem.
 
 \subsection{Deploy-Stufe}
 \begin{description}[leftmargin=1.4em,style=nextline]
@@ -458,17 +809,113 @@ der OIDC-Identität des Workflows getragen hätte.
 % ────────────────────────────────────────────────────────
 \section{Evaluation}\label{sec:evaluation}
 
-\subsection{SLSA-Einstufung}
-Die umgesetzte Pipeline erreicht nach \cite{slsa}:
+\subsection{SLSA-Einstufung}\label{sec:slsa}
+\emph{Supply-chain Levels for Software Artifacts} (SLSA) definiert in
+Version~1.0~\cite{slsa} eine ordinale Skala für die Vertrauenswürdigkeit
+der Build-Plattform und des Quellcode-Prozesses. Die Skala besteht aus
+zwei orthogonalen Tracks (\emph{Build} und \emph{Source}); die jeweiligen
+Levels sind kumulativ, d.\,h.\ jedes höhere Level fordert die
+Anforderungen aller niedrigeren mit. Im Folgenden werden die Levels
+zusammengefasst, mit der konkreten Umsetzung im untersuchten System
+abgeglichen und die Begründung für \emph{nicht} erreichte höhere Stufen
+transparent gemacht.
+
+\paragraph{Build-Track.}
+\begin{description}[leftmargin=1.4em,style=nextline]
+  \item[L0] Keine besonderen Anforderungen. Der Build kann lokal,
+        manuell, ohne jede Provenance erfolgen.
+  \item[L1] Provenance existiert in irgendeiner Form -- der Build ist
+        also reproduzierbar dokumentiert. Inhalt und Authentizität der
+        Provenance werden noch nicht abgesichert.
+  \item[L2] Provenance ist \emph{signiert} und wird von einem
+        \emph{gehosteten Build-Service} erzeugt. Der Build läuft also
+        nicht mehr auf einer Entwickler-Workstation; der
+        Build-Service kann Provenance an seine eigene Identität
+        binden.
+  \item[L3] Der Build-Service garantiert zusätzlich
+        \emph{Non-Forgeable Provenance} und \emph{Isolation} zwischen
+        Builds: Provenance kann nicht durch den Build-Schritt selbst
+        manipuliert werden, und ein Build kann nicht mit Artefakten
+        oder Geheimnissen vorheriger Builds interagieren.
+\end{description}
+
+Die hier umgesetzte Pipeline erreicht \textbf{Build~L3}. Konkret:
+
 \begin{itemize}[leftmargin=1.4em]
-  \item \textbf{Build L3}: gehosteter, ephemerer Builder; Provenance ist
-        nicht fälschbar (Sigstore-Signatur via OIDC); Build-Skript ist
-        versioniert.
-  \item \textbf{Source L2}: versioniert, retained history, Two-person review
-        via CODEOWNERS.
+  \item GitHub-hosted Runner (ubuntu-24.04) ist ein gehosteter Service;
+        jeder Job läuft in einer frisch provisionierten VM, was die
+        Isolation\-sanforderung erfüllt (\emph{ephemeral builder}).
+  \item Provenance wird mit \texttt{actions/attest-build-provenance}
+        erzeugt und über die OIDC-Identität des Workflows signiert; das
+        Signaturmaterial liegt nie im für die Build-Schritte
+        zugreifbaren Speicher (Non-Forgeable).
+  \item Das Build-Skript (\texttt{Dockerfile} und Workflow) ist
+        versioniert, mit Branch-Protection und CODEOWNERS-Review
+        geschützt.
 \end{itemize}
 
-\subsection{OpenSSF Scorecard}
+\paragraph{Source-Track.}
+\begin{description}[leftmargin=1.4em,style=nextline]
+  \item[L1] Quellcode ist versioniert (z.\,B.\ Git); Änderungen sind
+        rückverfolgbar.
+  \item[L2] Zusätzlich \emph{verifizierte Geschichte}: Commits sind
+        kryptographisch signiert; der Repository-Provider verifiziert
+        Identitäten beim Push.
+  \item[L3] Zusätzlich \emph{Two-person review} und Schutz vor
+        Force-Push / History-Rewrite.
+\end{description}
+
+Die Pipeline erreicht \textbf{Source~L3}: \texttt{main} ist
+branch-protected mit CODEOWNERS-Review (Vier-Augen), Force-Push und
+History-Rewrite sind serverseitig deaktiviert, signierte Commits sind
+Pflicht-Status-Check.
+
+\paragraph{Warum nicht höher?}
+SLSA~v1.0 definiert offiziell nur Build-L0 bis L3 und Source-L1 bis
+L3; es gibt also kein \enquote{L4}, das hier zu erreichen wäre.
+Konzeptionell relevant für eine Studienarbeit ist dennoch die
+Diskussion, welche \emph{darüber hinausgehenden} Eigenschaften ein
+\enquote{strenger als L3}-Setup hätte:
+
+\begin{enumerate}[leftmargin=1.4em]
+  \item \textbf{Hermetische Builds} -- der Build hat keinen
+        Netzwerkzugriff zur Build-Zeit; alle Inputs sind vorab in
+        einem Lockfile mit Hash-Pinning erfasst. Die hier verwendeten
+        Standard-pip-Installs verletzen diese Eigenschaft, da der
+        Resolver Indizes anfragt. Eine vollständige Härtung würde
+        \texttt{pip install --require-hashes} mit erzeugten
+        \texttt{hashin}-Lockfiles und einem Egress-Restricted Runner
+        erfordern.
+  \item \textbf{Reproduzierbare Builds} -- bit-für-bit identische
+        Artefakte aus identischen Inputs. Container-Images sind hier
+        notorisch problematisch (Build-Zeitstempel, Layer-IDs, Mtime
+        in Tar-Headern). Werkzeuge wie \texttt{kaniko} mit
+        \texttt{--reproducible} oder \texttt{buildkit}'s
+        \texttt{SOURCE\_DATE\_EPOCH} adressieren das, sind aber im
+        Standard-\texttt{docker/build-push-action}-Setup nicht
+        aktiviert.
+  \item \textbf{Multi-Party-Builds} -- zwei unabhängige
+        Build-Plattformen produzieren dasselbe Artefakt; Abweichungen
+        sind ein Alarmsignal. Das ist außerhalb der Reichweite einer
+        Pipeline auf einem einzigen Provider.
+\end{enumerate}
+
+Diese Eigenschaften werden im Ausblick (Kapitel~\ref{sec:fazit}) als
+weiterführende Forschungsrichtungen benannt. Für den
+Studienarbeit-Scope ist die kombinierte Erreichung von Build-L3 +
+Source-L3 ein bewusst gesetzter Höchststand, der mit handelsüblichen
+Mitteln (GitHub Actions + Sigstore) ohne kommerzielle Add-ons
+darstellbar ist.
+
+\paragraph{Verifikation der Einstufung.}
+Die Selbst-Einstufung wird durch externe Werkzeuge gegengeprüft:
+OpenSSF Scorecard (Abschnitt~\ref{sec:scorecard}) bewertet einzelne
+SLSA-relevante Checks objektiv;
+\texttt{actions/attest-build-provenance} produziert maschinenlesbare
+Provenance, die mit \texttt{slsa-verifier} gegen die deklarierten
+Anforderungen geprüft werden kann.
+
+\subsection{OpenSSF Scorecard}\label{sec:scorecard}
 Der Scorecard-Workflow läuft wöchentlich. Erwartete Scores $\geq$~8/10 für
 \emph{Branch-Protection}, \emph{Pinned-Dependencies}, \emph{Token-Permissions},
 \emph{Signed-Releases}, \emph{SAST}, \emph{Vulnerabilities}.
@@ -525,7 +972,7 @@ abhängig (Audit-Logs auf Org-Ebene erfordern entsprechende
 GitHub-Enterprise-Konfiguration) und damit nur teilweise innerhalb der
 Pipeline selbst mitigierbar.
 
-\subsection{Restrisiken}
+\subsection{Restrisiken}\label{sec:restrisks}
 \begin{itemize}[leftmargin=1.4em]
   \item \textbf{Plattform-Kompromittierung} (GitHub, Sigstore): nicht durch
         die Pipeline mitigierbar; Vertrauensanker.
@@ -547,8 +994,15 @@ Assurance dominieren.
 \subsection{Faktor Mensch und Anreize}\label{sec:humanfactor}
 Technische Mechanismen entfalten ihre Wirkung nur, wenn die
 beteiligten Akteure -- Entwickler, Reviewer, Plattform-Administratoren --
-sie auch konsequent anwenden. Drei Spannungsfelder sind in der Praxis
-besonders relevant.
+sie auch konsequent anwenden. Anderson formuliert im Security
+Engineering Framework die These, dass Sicherheit nicht primär an
+fehlenden Mechanismen scheitert, sondern an fehlerhaft gesetzten
+\emph{Anreizen}: Die Person, die schützen \emph{soll}, hat oft nicht
+denselben Nutzen vom erfolgreichen Schutz wie die Person, die im
+Schadensfall den Verlust trägt. Dieser Anreizbruch ist im
+DevSecOps-Kontext besonders prägnant, weil das Liefer- und das
+Sicherheits-Ziel dieselbe Pipeline teilen. Die folgenden
+Spannungsfelder sind in der Praxis besonders relevant.
 
 \paragraph{Geschwindigkeit vs.\ Reibung.}
 Sicherheits-Gates wie Coverage-Schwellen, signierte Commits oder
@@ -559,32 +1013,127 @@ Schutzmaßnahmen zu umgehen -- etwa durch \texttt{[skip ci]}-Commits,
 Akzeptieren von \texttt{HIGH}-Findings als \enquote{false positive}.
 Die Pipeline mildert dies, indem sie schnelle Jobs (Lint, Tests)
 parallel zu langsamen (CodeQL, Trivy) ausführt und PRs bei neuen
-Commits via \texttt{cancel-in-progress} abbricht.
+Commits via \texttt{cancel-in-progress} abbricht. Die wichtigere
+Beobachtung ist jedoch struktureller Natur: Wenn der lokale
+\texttt{pre-commit}-Hook dieselben Checks ausführt wie die CI, fängt
+ein Entwickler Verstöße bereits vor dem Push -- der Schutz wird damit
+zur \emph{schnellsten} Option, nicht zur langsamsten.
 
 \paragraph{Ownership-Diffusion.}
 \enquote{Security ist Aufgabe des Security-Teams} ist ein verbreitetes
-Anti-Pattern. CODEOWNERS verschiebt das Eigentum für sicherheits\-kritische
-Pfade (\texttt{.github/}, \texttt{Dockerfile}) explizit auf die
-Pipeline-Verantwortlichen und macht Reviews damit zum
-unumgehbaren Default. Die OpenSSF-Scorecard liefert wiederum eine
-\emph{externe} Bewertung, die Diskussionen über Posture-Defizite
-versachlicht.
+Anti-Pattern; in Conway's Sinn spiegelt jede Pipeline die
+Verantwortungsstruktur der Organisation wider, die sie betreibt. Eine
+zentrale Security-Funktion mit Veto-Recht erzeugt typischerweise eine
+Zwei-Klassen-Pipeline: schnelle \enquote{Dev}-Builds und langsame
+\enquote{Security}-Audits, die sich entkoppelt entwickeln. CODEOWNERS
+verschiebt das Eigentum für sicherheits\-kritische Pfade
+(\texttt{.github/}, \texttt{Dockerfile}) explizit auf die
+Pipeline-Verantwortlichen und macht Reviews damit zum unumgehbaren
+Default; gleichzeitig wird das Reviewer-Recht nicht zentralisiert,
+sondern an die fachlich nächsten Personen delegiert. Die
+OpenSSF-Scorecard liefert eine \emph{externe} Bewertung, die
+Diskussionen über Posture-Defizite versachlicht und sie aus der
+politischen in die operative Sphäre verschiebt.
 
 \paragraph{Alarmmüdigkeit.}
 Eine Pipeline, die bei jedem Push fünfzig Findings produziert, wird
-ignoriert. Die Implementierung adressiert dies durch die Trennung in
-Build-Breaker (\texttt{HIGH,CRITICAL}, mit \texttt{ignore-unfixed: true})
-und reine Reportings via SARIF. Damit bleibt jeder Build-Abbruch
-handlungsrelevant, und Findings ohne unmittelbaren Fix verschwinden
-nicht aus der Sicht (Code-Scanning-View), erzwingen aber keinen
-Stillstand.
+ignoriert -- ein Muster, das in der Forschung als \emph{alert fatigue}
+seit Jahren empirisch belegt ist. Die Implementierung adressiert dies
+durch die Trennung in Build-Breaker (\texttt{HIGH,CRITICAL}, mit
+\texttt{ignore-unfixed: true}) und reine Reportings via SARIF. Damit
+bleibt jeder Build-Abbruch handlungsrelevant, und Findings ohne
+unmittelbaren Fix verschwinden nicht aus der Sicht
+(Code-Scanning-View), erzwingen aber keinen Stillstand. Wichtig ist
+zudem die \emph{Reproduzierbarkeit lokal}: Wenn ein Entwickler
+denselben Bandit- oder Trivy-Lauf auf der Workstation reproduzieren
+kann, sinkt die Hemmschwelle, ein Finding tatsächlich zu adressieren,
+massiv -- daher das \texttt{pre-commit}-Setup mit denselben Tools.
 
 \paragraph{Anreiz für Maintainer.}
 Dependabot erzeugt Updates als kleine, isolierte PRs, die die volle
 Pipeline durchlaufen. Damit wird das Aktualisieren von Abhängigkeiten
 zur \emph{billigsten} statt zur teuersten Option -- ein klassischer
 Anreiz-Hebel im Sinne des Security-Engineering-Frameworks
-(Tab.~\ref{tab:seframework}).
+(Tab.~\ref{tab:seframework}). Der Hebelpunkt ist subtil: Ohne
+Automatisierung ist ein Dependency-Update ein bewusst zu treffender
+Aufwand, der mit dem Risiko eines Regressionsfehlers gegen den Nutzen
+einer hypothetischen zukünftigen CVE-Vermeidung abgewogen werden muss.
+Mit Automatisierung kehrt sich das Kosten/Nutzen-Verhältnis um: Den
+PR \emph{nicht} zu mergen erfordert eine aktive Begründung.
+
+\paragraph{Asymmetrie zwischen Angreifer und Verteidiger.}
+Eine in der Lehrveranstaltung mehrfach betonte Beobachtung ist die
+\emph{strukturelle Asymmetrie}: Der Angreifer muss eine Lücke finden,
+der Verteidiger alle schließen. In CI/CD potenziert sich dieser
+Effekt, weil die Pipeline Vertrauensanker für eine ganze Reihe
+nachgelagerter Systeme ist -- ein einziger Punkt, an dem ein Angreifer
+transitiv die Produktion kompromittiert. Die Antwort der Pipeline
+darauf ist nicht Perfektion, sondern Verteidigung in Tiefe: SHA-Pinning
+(verhindert Tag-Retag), least-privilege Permissions (begrenzt
+Sprengkraft eines erfolgreichen PPE), Cosign-Verify (erkennt
+Tag-Hijack post-build), Manual-Approval (letzte menschliche Hürde).
+Jede Einzelmaßnahme ist umgehbar; die Kombination ist es deutlich
+weniger.
+
+\paragraph{Verantwortungs-Verschiebung durch \enquote{Shift Left}.}
+Der DevSecOps-Slogan \enquote{shift~left} verschiebt
+Sicherheitsverantwortung von einem nachgelagerten Audit-Team zu den
+Entwicklern selbst. Das ist intendierter Effekt -- Bugs werden früher
+und billiger behoben -- erzeugt aber eine Kehrseite: Entwickler werden
+für Entscheidungen verantwortlich, für die sie weder ausgebildet
+sind noch die Zeit zugewiesen bekommen. Ein Bandit-Finding zu einer
+\texttt{subprocess.shell=True}-Verwendung erfordert eine
+Sicherheitsbewertung im Kontext der Aufrufkette. Werden solche
+Findings ohne unterstützendes Material allein dem Entwickler überlassen,
+ist die Standardreaktion das Stummschalten per
+\texttt{\# nosec}-Kommentar. Die Pipeline kompensiert das nur
+teilweise (Bandit-Findings landen als SARIF im Code-Scanning-View und
+sind damit auch für andere Reviewer sichtbar) -- die
+verbleibende Schulungs- und Begleitarbeit ist eine organisatorische
+Investition, die kein Tool ersetzt.
+
+\paragraph{Falsche Sicherheit durch Zertifikate.}
+Eine grüne Pipeline und ein hoher Scorecard-Wert können den Eindruck
+erwecken, ein Repository sei \enquote{sicher}. Schramm verweist in der
+Vorlesung explizit auf das Phänomen \emph{Security Theatre} (nach
+Schneier): sichtbare, aber wirkungsschwache Maßnahmen werden
+wirksamen, aber unsichtbaren vorgezogen, weil sie das Vertrauen der
+Stakeholder herstellen. Die OpenSSF-Scorecard ist anfällig für genau
+dieses Muster, da sie objektiv messbare Indikatoren bewertet (Existenz
+einer SECURITY.md, Action-Pinning, Branch-Protection-Konfiguration),
+nicht aber die \emph{Qualität} der gelebten Praxis: Ob die
+SECURITY.md tatsächlich gelesen wurde, ob CODEOWNERS-Reviews
+substanziell oder rubber-stamp sind, ob die Build-Breaker-Findings
+wirklich behoben oder nur weggesilenced werden -- all das fällt durch
+das Raster. Die Pipeline ist daher nicht als Endpunkt, sondern als
+\emph{Mindeststandard} zu lesen, auf dem eine kontinuierliche
+Sicherheitskultur aufsetzen muss.
+
+\paragraph{Insider als Grenzfall.}
+Alle hier diskutierten Mechanismen unterstellen, dass die
+Pipeline-Konfiguration selbst durch reguläre Reviews geschützt ist.
+Ein Administrator mit Force-Push-Recht oder das Recht, Branch-Protection
+zu deaktivieren, kann das gesamte Schutzgerüst aushebeln, ohne dass
+eine einzige technische Komponente versagt. Das ist kein Defekt der
+Pipeline, sondern eine fundamentale Eigenschaft jedes Systems mit
+unteilbarer Admin-Identität. Die Mitigation liegt außerhalb der
+Pipeline: rollengetrennte Org-Strukturen, Audit-Logging mit
+unabhängigem Empfänger, regelmäßige Posture-Reviews durch externe
+Stellen. Diese Maßnahmen werden in den Restrisiken
+(Abschnitt~\ref{sec:restrisks}) als bewusst nicht durch die Pipeline
+adressierbar geführt.
+
+\paragraph{Zusammenfassung.}
+Die diskutierten Spannungsfelder zeigen, dass die untersuchte Pipeline
+\emph{nicht} nur ein Werkzeug-Stapel ist, sondern eine Antwort auf
+eine Anreizlage: Sie macht Sicherheit zur billigsten verfügbaren
+Option, sie verteilt Verantwortung über die Organisation, sie
+entkoppelt Build-Breaker von Reportings, und sie hält bewusst eine
+menschliche Hürde an der kritischsten Stelle (Production-Approval)
+aufrecht. Diese Entscheidungen sind in den Quadranten
+\emph{Incentives} des SE-Frameworks
+(Tab.~\ref{tab:seframework}) verortet und damit gleichberechtigt zu
+den technischen Mechanismen.
 
 % ────────────────────────────────────────────────────────
 \section{Fazit und Ausblick}\label{sec:fazit}
@@ -615,6 +1164,7 @@ Weiterführende Arbeiten könnten:
 \bibitem{scorecard} OpenSSF, \emph{Scorecard}, \url{https://github.com/ossf/scorecard}, abgerufen 2026.
 \bibitem{sigstore} Sigstore Project, \emph{Cosign / Fulcio / Rekor}, \url{https://www.sigstore.dev/}, abgerufen 2026.
 \bibitem{owaspcicd} OWASP, \emph{Top 10 CI/CD Security Risks}, \url{https://owasp.org/www-project-top-10-ci-cd-security-risks/}, abgerufen 2026.
+\bibitem{cra} Europäische Union, \emph{Cyber Resilience Act} (Verordnung (EU) 2024/2847), \url{https://eur-lex.europa.eu/eli/reg/2024/2847/oj}, 2024.
 \end{thebibliography}
 
 \end{document}
