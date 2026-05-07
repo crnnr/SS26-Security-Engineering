@@ -1,6 +1,10 @@
 # Deploy flow: triggered by signed git tags. Verifies cosign signature
 # and provenance before promoting through staging -> production via
 # GitHub Environments (manual approval gate on production).
+#
+# Security invariant: deployments always reference an immutable image
+# digest (@sha256:...), never a mutable tag. The tag-triggered path
+# resolves the digest from the registry before handing off to deploy jobs.
 name: CD
 
 on:
@@ -40,18 +44,31 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
 
-      - name: Resolve image reference
+      - name: Resolve image digest
         id: resolve
         env:
           INPUT_DIGEST: ${{ inputs.image_digest }}
           REF_NAME: ${{ github.ref_name }}
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
         run: |
           if [ -n "$INPUT_DIGEST" ]; then
-            echo "digest=$INPUT_DIGEST" >> "$GITHUB_OUTPUT"
-            echo "ref=${REGISTRY}/${IMAGE_NAME}@${INPUT_DIGEST}" >> "$GITHUB_OUTPUT"
+            # workflow_dispatch: digest provided directly
+            DIGEST="$INPUT_DIGEST"
           else
-            echo "ref=${REGISTRY}/${IMAGE_NAME}:${REF_NAME}" >> "$GITHUB_OUTPUT"
+            # tag push: resolve the digest for the pushed tag so we never
+            # deploy by mutable tag -- only by immutable digest.
+            TAGGED_REF="${REGISTRY}/${IMAGE_NAME}:${REF_NAME}"
+            DIGEST=$(docker buildx imagetools inspect "$TAGGED_REF" \
+              --format '{{json .Manifest.Digest}}' | tr -d '"')
+            if [ -z "$DIGEST" ]; then
+              echo "::error::Could not resolve digest for ${TAGGED_REF}"
+              exit 1
+            fi
           fi
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "ref=${REGISTRY}/${IMAGE_NAME}@${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Resolved to digest: ${DIGEST}"
 
       - name: Verify cosign signature (keyless)
         env:
@@ -59,8 +76,7 @@ jobs:
         run: |
           cosign verify \
             --certificate-identity-regexp "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/.+" \
-            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-            "$IMAGE"
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" "$IMAGE"
 
       - name: Verify build provenance attestation
         env:
@@ -86,11 +102,14 @@ jobs:
       - name: Federated login (placeholder)
         run: echo "Use azure/login@... or aws-actions/configure-aws-credentials@... with OIDC here."
 
-      - name: Deploy
+      - name: Deploy (digest-pinned)
         env:
-          IMAGE_DIGEST: ${{ needs.verify.outputs.digest }}
+          DIGEST: ${{ needs.verify.outputs.digest }}
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
         run: |
-          echo "kubectl set image deploy/app app=${REGISTRY}/${IMAGE_NAME}@${IMAGE_DIGEST}"
+          # Always deploy by digest, never by tag.
+          echo "kubectl set image deploy/app app=${REGISTRY}/${IMAGE_NAME}@${DIGEST}"
 
   deploy-production:
     name: Deploy to production (manual approval)
@@ -106,8 +125,11 @@ jobs:
       - name: Federated login (placeholder)
         run: echo "OIDC federation to cloud provider goes here -- no long-lived secrets."
 
-      - name: Deploy
+      - name: Deploy (digest-pinned)
         env:
-          IMAGE_DIGEST: ${{ needs.verify.outputs.digest }}
+          DIGEST: ${{ needs.verify.outputs.digest }}
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
         run: |
-          echo "kubectl set image deploy/app app=${REGISTRY}/${IMAGE_NAME}@${IMAGE_DIGEST}"
+          # Always deploy by digest, never by tag.
+          echo "kubectl set image deploy/app app=${REGISTRY}/${IMAGE_NAME}@${DIGEST}"

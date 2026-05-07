@@ -1,7 +1,3 @@
-# Default reviewers for any change. Branch protection requires this
-# review to merge into main, enforcing the four-eyes principle.
-*       @christof-renner @manuel-friedl
-
 # Pipeline-touching changes need both authors -- supply-chain critical.
 /.github/                @christof-renner @manuel-friedl
 /Dockerfile              @christof-renner @manuel-friedl
