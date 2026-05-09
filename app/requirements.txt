@@ -11,9 +11,9 @@ flask==3.0.3 \
     --hash=sha256:34e815dfaa43340d1d15a5c3a02b8476004037eb4840b34910c6e21679d288f3
     # via -r requirements.in
 
-gunicorn==23.0.0 \
-    --hash=sha256:f014447a0101dc57e294f6c18ca6b40227a4c90e9bdb586042628030cbe004f9 \
-    --hash=sha256:ec400d38950a4a6a4f4e2c16a1cd44a30b9b51e9ce2b2b5a3e92c05e4de1d4e8
+gunicorn==26.0.0 \
+    --hash=sha256:40233d26a5f0d1872916188c276e21641155111c2853f0c2cd55260aec0d24fc \
+    --hash=sha256:ca9346f85e3a4aeeb64d491045c16b9a35647abd37ea15efe53080eb8b090baf
     # via -r requirements.in
 
 # NOTE: Transitive dependencies (blinker, click, itsdangerous, jinja2,
