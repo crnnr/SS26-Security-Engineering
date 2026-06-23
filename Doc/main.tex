@@ -125,6 +125,25 @@ auf GitHub Actions umgesetzt; die Übertragbarkeit auf GitLab~CI wird
 nicht im Detail untersucht und in Kapitel~\ref{sec:fazit} lediglich als
 weiterführende Forschungsrichtung benannt.
 
+\subsection{Methodik}
+Die Untersuchung folgt einem strukturierten, an das
+Security-Engineering-Framework angelehnten Vorgehen. Zunächst werden
+System, Assets und Trust Boundaries modelliert
+(Kap.~\ref{sec:system}). Darauf aufbauend werden Bedrohungen je
+Pipeline-Stufe systematisch nach STRIDE erhoben und mit dem
+Angreifermodell sowie -- zur Plausibilisierung -- mit den
+OWASP-Top-10-CI/CD-Risiken trianguliert (Kap.~\ref{sec:threatmodel}).
+Jeder Bedrohung wird anschließend eine konkrete, im Prototyp umgesetzte
+Gegenmaßnahme zugeordnet (Kap.~\ref{sec:countermeasures}). Die
+Risiko-Einstufung ist qualitativ (niedrig/mittel/hoch) und kombiniert im
+Sinne der Vorlesungsdefinition die Eintrittswahrscheinlichkeit
+(\emph{Gefahr}) mit dem Schadensausmaß (\emph{Gefährdung}) zum
+resultierenden \emph{Risiko}. Die abschließende Bewertung
+(Kap.~\ref{sec:evaluation}) stützt sich nicht auf Selbstauskunft allein,
+sondern wird durch externe, automatisierte Werkzeuge gegengeprüft --
+OpenSSF Scorecard für die Repository-Posture sowie \texttt{cosign} und
+\texttt{slsa-verifier} für Signatur und Provenance.
+
 \subsection{Aufbau der Arbeit}
 Kapitel~\ref{sec:grundlagen} klärt die Begriffe DevSecOps, Supply-Chain-Security
 und die zugrundeliegenden Frameworks (STRIDE, SLSA, SSDF) sowie die
@@ -136,6 +155,22 @@ Gegenmaßnahmen zu und dokumentiert die Implementierung im Prototyp.
 Kapitel~\ref{sec:evaluation} bewertet die Wirksamkeit, Kapitel~\ref{sec:fazit}
 fasst zusammen und diskutiert Restrisiken.
 
+\subsection{Methodisches Vorgehen}
+Die Arbeit kombiniert eine analytische mit einer konstruktiven Phase und
+ist durchgängig am Vier-Quadranten-Modell des Security Engineering
+(Abschnitt~\ref{sec:seframework}) ausgerichtet. Zunächst werden Assets,
+Trust Boundaries und ein Angreifermodell bestimmt
+(Kapitel~\ref{sec:system}). Daraus wird das Bedrohungsmodell nach STRIDE
+je Pipeline-Stufe abgeleitet (Kapitel~\ref{sec:threatmodel}) und gegen
+die OWASP-Top-10-CI/CD-Risiken (Abschnitt~\ref{sec:owasp}) trianguliert;
+reale Vorfälle (SolarWinds, Codecov, \texttt{tj-actions}) dienen als
+Plausibilitätsanker. Die abgeleiteten Maßnahmen werden in einem
+lauffähigen GitHub-Actions-Prototyp umgesetzt
+(Kapitel~\ref{sec:countermeasures}; vollständige Artefakte in
+Anhang~\ref{app:artifacts}). Die Evaluation erfolgt zweistufig: Eine
+SLSA-Selbsteinstufung wird durch die extern und automatisiert erhobene
+OpenSSF-Scorecard gegengeprüft (Kapitel~\ref{sec:evaluation}).
+
 % ────────────────────────────────────────────────────────
 \section{Grundlagen}\label{sec:grundlagen}
 
@@ -145,7 +180,10 @@ den DevOps-Lebenszyklus mit dem Ziel, Sicherheit als kontinuierlichen,
 automatisierten Bestandteil von Build und Deployment zu etablieren
 (\enquote{shift~left} und \enquote{shift~right}). Sicherheitsmaßnahmen
 werden nicht nachgelagert aufgesetzt, sondern als Teil derselben Pipeline
-ausgeführt, die auch das Artefakt produziert.
+ausgeführt, die auch das Artefakt produziert. DevSecOps lässt sich dabei
+als kontinuierliche, automatisierte Ausprägung des klassischen
+\emph{Security Development Lifecycle} (SDL) verstehen, dessen Praktiken
+im NIST SSDF (Abschnitt~\ref{sec:compliance}) prozessual kodifiziert sind.
 
 \subsection{Software Supply Chain Security}
 Eine Software Supply Chain umfasst alle Personen, Prozesse, Werkzeuge und
@@ -238,8 +276,6 @@ bzw.\ auf sicherheitskritische Pfade (\texttt{/.github/},
 \texttt{Dockerfile}); CODEOWNERS-Review und Production-Approval-Gate
 sind technische Umsetzungen der Mehr-Personen-Autorisierung.
 
-\newpage
-
 \paragraph{Bell-LaPadula: Vertraulichkeit als Informationsfluss.}
 Das \emph{Bell-LaPadula}-Modell (BLP)~\cite{blp,anderson} formalisiert
 Vertraulichkeit als Informationsflusskontrolle über zwei Regeln:
@@ -271,7 +307,9 @@ transitive Abhängigkeit, ein Base-Image oder ein Build-Schritt. SBOM und
 SLSA-Provenance (Abschnitte~\ref{sec:sbomlifecycle}
 und~\ref{sec:slsa}) machen diese Low-Water-Mark explizit, prüfbar und
 signiert; Dependency-Pinning, \texttt{pip-audit} und Trivy verhindern,
-dass niedrigintegre Inputs unbemerkt \enquote{nach oben} fließen.
+dass niedrigintegre Inputs unbemerkt \enquote{nach oben} fließen. Die
+Pipeline realisiert damit faktisch eine mehrstufige Integritätspolitik
+im Sinne Bibas, auch ohne explizite Integritätslabel.
 
 \paragraph{Authentifizierungsprotokolle: Frische und Replay.}
 In der protokollanalytischen Sicht der Lehrveranstaltung gilt
@@ -285,9 +323,13 @@ und das Rekor-Transparency-Log etablieren analog eine überprüfbare
 Vertrauensbeziehung ohne langlebiges Schlüsselmaterial.
 
 
+% ────────────────────────────────────────────────────────
 \section{System unter Betrachtung}\label{sec:system}
 
 \subsection{Architekturüberblick}
+Untersucht wird eine prototypische, container-basierte Pipeline für eine
+Python-Webanwendung. Die wesentlichen Stufen sind in
+Abbildung~\ref{fig:pipeline} dargestellt.
 
 \begin{figure}[h]
 \centering
@@ -321,8 +363,6 @@ Vertrauensbeziehung ohne langlebiges Schlüsselmaterial.
 \caption{Pipeline-Stufen und externe Vertrauensanker.}
 \label{fig:pipeline}
 \end{figure}
-
-\newpage
 
 \subsection{Schützenswerte Assets}
 \begin{longtable}{p{4.2cm} p{9.5cm}}
@@ -873,7 +913,9 @@ hingegen real umgesetzt.
 
 \subsection{Auszug aus der CI-Implementierung}
 Listing~\ref{lst:ci} zeigt die Job-Topologie und die zentralen
-Sicherheits-Gates.
+Sicherheits-Gates; die vollständigen Workflow-Dateien sowie
+\texttt{Dockerfile}, \texttt{CODEOWNERS} und die Dependabot-Konfiguration
+sind in Anhang~\ref{app:artifacts} dokumentiert.
 
 \begin{lstlisting}[language=bash,caption={Auszug \texttt{.github/workflows/ci.yml}: Permissions \& Pin auf SHA},label={lst:ci}]
 permissions: {}              # default-deny
@@ -1293,7 +1335,11 @@ Organisation) und \emph{Privatsphäre} (Schutz zugunsten des Individuums).
 Auf der Leitungsebene verpflichtet zudem das \emph{KonTraG} die
 Unternehmensführung zu einem Risikofrüherkennungssystem; eine
 auditierbare, mit Provenance und Audit-Logs hinterlegte Pipeline ist
-insofern auch ein Baustein der gesetzlich geforderten Governance.
+insofern auch ein Baustein der gesetzlich geforderten Governance. Das in
+der Aufgabenstellung ebenfalls genannte \emph{TMG} (Telemediengesetz) ist
+für die Build-Domäne nur am Rande einschlägig und wurde 2024 weitgehend
+durch das Digitale-Dienste-Gesetz (DDG) abgelöst; die
+datenschutzrechtlichen Teile finden sich heute im TDDDG.
 
 \paragraph{Zwischenfazit.}
 Die Pipeline trifft die technischen Anforderungen der relevanten
@@ -1509,7 +1555,12 @@ Weiterführende Arbeiten könnten:
         als zusätzliche Verifikationsschicht ergänzen,
   \item formale Analysen zu Pipeline-Konfigurationen (z.\,B.\ \texttt{zizmor},
         \texttt{actionlint}) mit Beweisbarkeit der \emph{permissions}-Minimalität
-        verbinden.
+        verbinden,
+  \item den SBOM-Lebenszyklus um den in Abschnitt~\ref{sec:sbomlifecycle}
+        skizzierten kontinuierlichen SBOM-Diff erweitern und das SBOM um eine
+        \emph{Cryptography Bill of Materials} (CBOM) ergänzen, die
+        kryptographische Assets inventarisiert -- relevant insbesondere für
+        eine spätere Post-Quantum-Migration.
 \end{itemize}
 
 % ────────────────────────────────────────────────────────
