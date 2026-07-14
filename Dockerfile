@@ -11,7 +11,7 @@
 ARG PYTHON_VERSION=3.12-slim-bookworm
 # sha256 below is the digest for 3.12-slim-bookworm as of the last review.
 # Replace with the output of the inspect command above before production use.
-ARG PYTHON_DIGEST=sha256:e9b6a30f2b3ded7ad1b94e7c5f88492bea44c2f17ee09c0c16c2a6db5e7db1d4
+ARG PYTHON_DIGEST=sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b
 
 FROM python:${PYTHON_VERSION}@${PYTHON_DIGEST} AS builder
 WORKDIR /build
